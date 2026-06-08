@@ -8,14 +8,14 @@ from __future__ import annotations
 
 import sys
 
-from . import __version__
+from mesea_operator import __version__  # absolute import: works under `-m` AND frozen
 
 
 def main() -> None:
     if "--version" in sys.argv:
         print(__version__)
         return
-    from .ui import main as ui_main  # imported lazily so --version needs no Tk
+    from mesea_operator.ui import main as ui_main  # lazy so --version needs no Tk
 
     ui_main()
 

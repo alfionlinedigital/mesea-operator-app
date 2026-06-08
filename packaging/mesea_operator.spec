@@ -25,7 +25,7 @@ hiddenimports = collect_submodules("keyring.backends") + [
 ]
 
 a = Analysis(
-    [os.path.join(ROOT, "mesea_operator", "__main__.py")],
+    [os.path.join(ROOT, "app.py")],
     pathex=[ROOT],
     binaries=[],
     datas=datas,
