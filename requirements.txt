@@ -1,0 +1,2 @@
+sv-ttk>=2.6
+keyring>=24

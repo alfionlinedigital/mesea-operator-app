@@ -1,8 +1,26 @@
 name: ci
+
 on:
+  push:
+    branches: [main]
+  pull_request:
   workflow_dispatch:
+
 jobs:
-  noop:
+  test:
     runs-on: ubuntu-latest
     steps:
-      - run: echo ok
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - name: Install Tk (Linux runners ship Python without tkinter)
+        run: sudo apt-get update && sudo apt-get install -y python3-tk
+      - name: Install deps
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt pytest
+      - name: Run tests
+        run: python -m pytest tests/ -q
+      - name: Smoke (headless --version)
+        run: python -m mesea_operator --version
