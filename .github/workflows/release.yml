@@ -4,13 +4,12 @@ on:
   push:
     tags: ["v*"]
   workflow_dispatch:
-    inputs:
-      tag:
-        description: "Tag to build (e.g. v0.1.0); release only created on tag pushes"
-        required: false
 
 permissions:
   contents: write  # create releases + upload assets
+
+env:
+  APP_VERSION: "0.1.0"
 
 jobs:
   build:
@@ -43,7 +42,7 @@ jobs:
           pip install -r requirements.txt pyinstaller
       - name: Build onefile
         run: pyinstaller packaging/mesea_operator.spec --noconfirm
-      - name: Normalize artifact name
+      - name: Stage portable binary
         shell: bash
         run: |
           mkdir -p out
@@ -53,10 +52,46 @@ jobs:
         run: |
           chmod +x "out/${{ matrix.asset }}" || true
           "out/${{ matrix.asset }}" --version
+
+      # --- per-OS installers --------------------------------------------------
+      - name: Package .deb (Debian/Ubuntu)
+        if: runner.os == 'Linux'
+        shell: bash
+        run: |
+          PKG=pkgroot
+          mkdir -p "$PKG/DEBIAN" "$PKG/usr/bin" "$PKG/usr/share/applications"
+          cp out/mesea-operator-linux "$PKG/usr/bin/mesea-operator"
+          chmod 755 "$PKG/usr/bin/mesea-operator"
+          printf 'Package: mesea-operator\nVersion: %s\nSection: utils\nPriority: optional\nArchitecture: amd64\nMaintainer: Alfi Online Digital <me@octav.info>\nDescription: Mesea Operator launcher for account managers\n OAuth login + Claude Code bridge for the Mesea platform.\n' "$APP_VERSION" > "$PKG/DEBIAN/control"
+          printf '[Desktop Entry]\nName=Mesea Operator\nExec=/usr/bin/mesea-operator\nType=Application\nCategories=Utility;\nTerminal=false\n' > "$PKG/usr/share/applications/mesea-operator.desktop"
+          dpkg-deb --build --root-owner-group "$PKG" "out/mesea-operator-linux.deb"
+          dpkg-deb --info "out/mesea-operator-linux.deb"
+
+      - name: Package .dmg (macOS)
+        if: runner.os == 'macOS'
+        shell: bash
+        run: |
+          test -d "dist/Mesea Operator.app" || { echo "missing .app bundle"; exit 1; }
+          hdiutil create -volname "Mesea Operator" \
+            -srcfolder "dist/Mesea Operator.app" \
+            -ov -format UDZO "out/mesea-operator-macos.dmg"
+          ls -la out
+
+      - name: Package installer .exe (Windows / Inno Setup)
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          choco install innosetup -y --no-progress
+          $iscc = "C:\Program Files (x86)\Inno Setup 6\ISCC.exe"
+          & "$iscc" "/DMyAppVersion=$env:APP_VERSION" "packaging\windows\installer.iss"
+          if ($LASTEXITCODE -ne 0) { throw "ISCC failed" }
+          Copy-Item "installer_out\mesea-operator-windows-setup.exe" "out\mesea-operator-windows-setup.exe"
+          Get-ChildItem out
+
       - uses: actions/upload-artifact@v4
         with:
-          name: ${{ matrix.asset }}
-          path: out/${{ matrix.asset }}
+          name: dist-${{ matrix.os }}
+          path: out/*
           if-no-files-found: error
 
   release:
@@ -71,6 +106,7 @@ jobs:
         run: |
           mkdir -p release
           find artifacts -type f -exec cp {} release/ \;
+          echo "Release assets:"
           ls -la release
       - name: Publish GitHub release
         uses: softprops/action-gh-release@v2

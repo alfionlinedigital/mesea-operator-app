@@ -10,6 +10,7 @@
 # Output: dist/mesea-operator(.exe)
 
 import os
+import sys
 
 from PyInstaller.utils.hooks import collect_data_files, collect_submodules
 
@@ -56,3 +57,14 @@ exe = EXE(
     codesign_identity=None,
     entitlements_file=None,
 )
+
+# On macOS, also emit a proper .app bundle so it can be packaged into a .dmg
+# and double-clicked from Finder (the bare unix binary can't).
+if sys.platform == "darwin":
+    app = BUNDLE(
+        exe,
+        name="Mesea Operator.app",
+        icon=None,
+        bundle_identifier="ro.mesea.operator",
+        info_plist={"CFBundleShortVersionString": "0.1.0", "NSHighResolutionCapable": True},
+    )
