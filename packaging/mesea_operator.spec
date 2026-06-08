@@ -9,7 +9,13 @@
 #
 # Output: dist/mesea-operator(.exe)
 
+import os
+
 from PyInstaller.utils.hooks import collect_data_files, collect_submodules
+
+# PyInstaller resolves Analysis paths relative to the spec's directory, not the
+# CWD — so anchor everything to the repo root via SPECPATH.
+ROOT = os.path.abspath(os.path.join(SPECPATH, os.pardir))
 
 datas = collect_data_files("sv_ttk")
 hiddenimports = collect_submodules("keyring.backends") + [
@@ -19,8 +25,8 @@ hiddenimports = collect_submodules("keyring.backends") + [
 ]
 
 a = Analysis(
-    ["mesea_operator/__main__.py"],
-    pathex=["."],
+    [os.path.join(ROOT, "mesea_operator", "__main__.py")],
+    pathex=[ROOT],
     binaries=[],
     datas=datas,
     hiddenimports=hiddenimports,
