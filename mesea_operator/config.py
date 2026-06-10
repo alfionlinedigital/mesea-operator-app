@@ -31,16 +31,18 @@ REVOKE_URL = os.environ.get("MESEA_REVOKE_URL", "https://mesea.ro/api/v1/oauth/r
 # Identity probe — confirms an issued token works without exposing its value.
 ME_URL = os.environ.get("MESEA_ME_URL", "https://mesea.ro/api/v1/me")
 
+# Operator workspace bundle — the private mesea-operator skills/playbooks,
+# served behind the OAuth wall as a gzipped tar. The launcher downloads it with
+# the operator token instead of cloning the (private) repo, so account managers
+# never need GitHub access.
+WORKSPACE_URL = os.environ.get(
+    "MESEA_WORKSPACE_URL", "https://mesea.ro/api/v1/operator-workspace"
+)
+
 # Default MCP endpoint written into the operator workspace env (the workspace
 # .mcp.json reads ${MESEA_MCP_URL:-https://mesea.ro/api/v1/mcp}; we set it
 # explicitly so a staging override flows through).
 MCP_URL = os.environ.get("MESEA_MCP_URL", "https://mesea.ro/api/v1/mcp")
-
-# The AM workspace repo the launcher keeps up to date (NOT this app's repo).
-OPERATOR_REPO = os.environ.get(
-    "MESEA_OPERATOR_REPO",
-    "https://github.com/alfionlinedigital/mesea-operator.git",
-)
 
 # This app's own repo, used for self-update checks against GitHub releases.
 SELF_UPDATE_REPO = os.environ.get(

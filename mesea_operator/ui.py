@@ -77,9 +77,11 @@ class OperatorApp:
     # --- background startup --------------------------------------------------
     def _startup_tasks(self) -> None:
         def work() -> None:
-            ws = workspace.ensure_workspace()
-            if ws.status == "error":
-                self._set_status(f"Atenție workspace: {ws.detail}")
+            cred = credential_store.load()
+            if cred:
+                ws = workspace.ensure_workspace(cred.access_token)
+                if ws.status == "error":
+                    self._set_status(f"Atenție workspace: {ws.detail}")
             up = updater.check_for_update()
             if up.available:
                 self.root.after(0, lambda: self._prompt_update(up))
@@ -128,13 +130,25 @@ class OperatorApp:
             claude_bridge.write_token(claude_bridge.settings_path(), cred.access_token, config.MCP_URL)
             return
 
-        ws = workspace.default_workspace_dir()
         claude_bridge.write_token(claude_bridge.settings_path(), cred.access_token, config.MCP_URL)
-        self._set_status("Se pornește Claude…")
+        self._set_status("Se actualizează workspace-ul…")
 
         def work() -> None:
+            ws = workspace.ensure_workspace(cred.access_token)
+            if ws.status == "error":
+                claude_bridge.scrub_token(claude_bridge.settings_path())
+                self.root.after(
+                    0,
+                    lambda: messagebox.showerror(
+                        config.APP_NAME, f"Workspace indisponibil: {ws.detail}"
+                    ),
+                )
+                self.root.after(0, self._refresh_from_store)
+                return
+
+            self._set_status("Se pornește Claude…")
             try:
-                proc = claude_bridge.launch_claude(exe, str(ws))
+                proc = claude_bridge.launch_claude(exe, str(ws.path))
                 proc.wait()
             finally:
                 claude_bridge.scrub_token(claude_bridge.settings_path())
