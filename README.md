@@ -41,7 +41,7 @@ as a crash-safe net).
 
 All endpoints default to production and are overridable via environment
 variables (for staging / local dev): `MESEA_MCP_URL`, `MESEA_AUTHORIZE_URL`,
-`MESEA_TOKEN_URL`, `MESEA_REVOKE_URL`, `MESEA_ME_URL`, `MESEA_OPERATOR_REPO`.
+`MESEA_TOKEN_URL`, `MESEA_REVOKE_URL`, `MESEA_ME_URL`, `MESEA_WORKSPACE_URL`.
 
 ## Develop
 
