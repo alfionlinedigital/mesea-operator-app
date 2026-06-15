@@ -66,5 +66,5 @@ if sys.platform == "darwin":
         name="Mesea Operator.app",
         icon=None,
         bundle_identifier="ro.mesea.operator",
-        info_plist={"CFBundleShortVersionString": "0.2.0", "NSHighResolutionCapable": True},
+        info_plist={"CFBundleShortVersionString": "0.3.0", "NSHighResolutionCapable": True},
     )

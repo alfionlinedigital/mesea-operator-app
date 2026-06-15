@@ -49,6 +49,11 @@ SELF_UPDATE_REPO = os.environ.get(
     "MESEA_SELF_UPDATE_REPO", "alfionlinedigital/mesea-operator-app"
 )
 
+# Named mutex the running app holds so the Windows installer can detect a live
+# instance and ask the user to close it. Must stay in sync with the ``AppMutex``
+# directive in ``packaging/windows/installer.iss``.
+SINGLE_INSTANCE_MUTEX = "MeseaOperatorMutex"
+
 # OS credential-store coordinates (keyring service + the env var Claude reads).
 KEYRING_SERVICE = "mesea-operator"
 TOKEN_ENV_VAR = "MESEA_API_TOKEN"

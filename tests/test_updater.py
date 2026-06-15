@@ -63,8 +63,51 @@ def test_check_for_update_detects_newer(monkeypatch):
         "urlopen",
         lambda *a, **k: FakeResp(json.dumps(payload).encode()),
     )
-    monkeypatch.setattr(updater, "_asset_suffix", lambda: "linux")
+    monkeypatch.setattr(updater, "_asset_suffix", lambda *a, **k: "linux")
     info = updater.check_for_update(repo="x/y", current="0.1.0")
     assert info.available is True
     assert info.latest_version == "v0.9.0"
     assert info.download_url == "http://l"
+
+
+def _fake_release(monkeypatch, payload):
+    import io
+    import json
+
+    class FakeResp(io.BytesIO):
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *a):
+            return False
+
+    monkeypatch.setattr(
+        updater.urllib.request,
+        "urlopen",
+        lambda *a, **k: FakeResp(json.dumps(payload).encode()),
+    )
+
+
+def test_check_for_update_redirects_by_context(monkeypatch):
+    """Installed → platform installer asset; portable → bare per-OS binary."""
+    payload = {
+        "tag_name": "v0.9.0",
+        "assets": [
+            {"name": "mesea-operator-windows.exe", "browser_download_url": "http://portable"},
+            {"name": "mesea-operator-windows-setup.exe", "browser_download_url": "http://setup"},
+        ],
+    }
+    _fake_release(monkeypatch, payload)
+    monkeypatch.setattr(updater.sys, "platform", "win32")
+
+    installed = updater.check_for_update(
+        repo="x/y", current="0.1.0", context=updater.install_context.CONTEXT_INSTALLED
+    )
+    assert installed.download_url == "http://setup"
+    assert installed.context == updater.install_context.CONTEXT_INSTALLED
+
+    portable = updater.check_for_update(
+        repo="x/y", current="0.1.0", context=updater.install_context.CONTEXT_PORTABLE
+    )
+    assert portable.download_url == "http://portable"
+    assert portable.context == updater.install_context.CONTEXT_PORTABLE

@@ -4,7 +4,7 @@
 ; installer (no admin required) with Start Menu + desktop shortcuts.
 
 #ifndef MyAppVersion
-  #define MyAppVersion "0.2.0"
+  #define MyAppVersion "0.3.0"
 #endif
 #define MyAppName "Mesea Operator"
 
@@ -23,6 +23,14 @@ Compression=lzma2
 SolidCompression=yes
 WizardStyle=modern
 ArchitecturesInstallIn64BitMode=x64compatible
+; Detect a running instance and ask the user to close it before installing.
+; The running app holds this same named mutex (config.SINGLE_INSTANCE_MUTEX /
+; instance_guard.acquire_singleton); if present, Setup/Uninstall halts with a
+; "please close all instances" prompt. CloseApplications additionally lets the
+; wizard offer to shut the app if it still holds the target exe open.
+AppMutex=MeseaOperatorMutex
+CloseApplications=yes
+RestartApplications=no
 
 [Files]
 Source: "..\..\dist\mesea-operator.exe"; DestDir: "{app}"; Flags: ignoreversion
