@@ -12,16 +12,34 @@ shipped as a single self-contained executable for Windows, macOS, and Linux.
 
 ## Install (account managers)
 
-1. Download the build for your OS from the [latest release](https://github.com/alfionlinedigital/mesea-operator-app/releases/latest):
-   - Windows → `mesea-operator-windows.exe`
-   - macOS → `mesea-operator-macos`
-   - Linux/Debian → `mesea-operator-linux`
+Each release ships **two channels** per OS — pick whichever you prefer; both
+run the same app:
+
+| OS | Installed (recommended) | Portable (single file) |
+| --- | --- | --- |
+| Windows | `mesea-operator-windows-setup.exe` | `mesea-operator-windows.exe` |
+| macOS | `mesea-operator-macos.dmg` | `mesea-operator-macos` |
+| Linux/Debian | `mesea-operator-linux.deb` | `mesea-operator-linux` |
+
+1. Download a build for your OS from the [latest release](https://github.com/alfionlinedigital/mesea-operator-app/releases/latest).
 2. Run it. (Unsigned for now — Windows SmartScreen / macOS Gatekeeper will
    warn the first time; choose "Run anyway" / right-click → Open.)
 3. Click **Conectează-te**, log in with your Mesea account (2FA), and approve
    the access scopes. Done — click **Pornește Mesea Operator** to start.
 
 You never paste or see a token; it's minted by the login and stored encrypted.
+
+### Updates know how you installed
+
+The app detects whether it's running as an **installed** copy or a **portable**
+binary and points you at the matching download when a new release is out — the
+installer if you installed, the bare binary if you're portable (so you never
+end up with two managed copies). To make the swap clean:
+
+- **Installer** — re-running the Windows setup while the app is open detects the
+  running instance (via a named mutex) and asks you to close it first.
+- **Portable** — launching a portable build detects other running copies and
+  offers to close them, freeing the on-disk file to be replaced.
 
 ## How auth works (no token ever touches the chat)
 

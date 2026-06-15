@@ -14,7 +14,18 @@ from tkinter import messagebox, ttk
 
 import sv_ttk
 
-from . import __version__, api, claude_bridge, config, credential_store, oauth_client, updater, workspace
+from . import (
+    __version__,
+    api,
+    claude_bridge,
+    config,
+    credential_store,
+    install_context,
+    instance_guard,
+    oauth_client,
+    updater,
+    workspace,
+)
 
 
 class OperatorApp:
@@ -26,6 +37,13 @@ class OperatorApp:
 
         self._token: str | None = None
         self._label: str | None = None
+        self._context = install_context.detect_context()
+
+        # Hold the named mutex so the Windows installer can detect this running
+        # instance and ask the user to close it before an upgrade (no-op off
+        # Windows). Portable builds have no installer gate, so they enforce
+        # single-instance themselves below.
+        instance_guard.acquire_singleton()
 
         wrap = ttk.Frame(root, padding=24)
         wrap.pack(fill="both", expand=True)
@@ -49,6 +67,7 @@ class OperatorApp:
         # Safety: scrub any token left in settings.json by a prior crashed run.
         claude_bridge.scrub_token(claude_bridge.settings_path())
         self._refresh_from_store()
+        self.root.after(150, self._enforce_single_instance)
         self.root.after(200, self._startup_tasks)
 
     # --- state ---------------------------------------------------------------
@@ -74,6 +93,37 @@ class OperatorApp:
         self.signout_btn.state(["!disabled"] if connected else ["disabled"])
         self.auth_btn.config(text="Reautentificare" if connected else "Conectează-te")
 
+    # --- single-instance guard (portable) ------------------------------------
+    def _enforce_single_instance(self) -> None:
+        """Portable builds have no installer to gate the binary swap, so detect
+        other running copies and offer to close them (frees the on-disk exe for
+        a self-update and avoids two windows fighting over the same token)."""
+        if self._context != install_context.CONTEXT_PORTABLE:
+            return
+        try:
+            others = instance_guard.find_other_instances()
+        except Exception:
+            return  # process enumeration is best-effort; never block startup
+        if not others:
+            return
+
+        names = ", ".join(sorted({o.name or f"PID {o.pid}" for o in others}))
+        if not messagebox.askyesno(
+            config.APP_NAME,
+            f"Alte instanțe Mesea Operator rulează deja ({names}). "
+            "Le închizi ca să continui cu această versiune?",
+        ):
+            return
+
+        results = instance_guard.terminate([o.pid for o in others])
+        failed = [pid for pid, closed in results.items() if not closed]
+        if failed:
+            messagebox.showwarning(
+                config.APP_NAME,
+                "Nu am putut închide toate instanțele "
+                f"(PID: {', '.join(map(str, failed))}). Închide-le manual.",
+            )
+
     # --- background startup --------------------------------------------------
     def _startup_tasks(self) -> None:
         def work() -> None:
@@ -82,16 +132,20 @@ class OperatorApp:
                 ws = workspace.ensure_workspace(cred.access_token)
                 if ws.status == "error":
                     self._set_status(f"Atenție workspace: {ws.detail}")
-            up = updater.check_for_update()
+            up = updater.check_for_update(context=self._context)
             if up.available:
                 self.root.after(0, lambda: self._prompt_update(up))
 
         threading.Thread(target=work, daemon=True).start()
 
     def _prompt_update(self, up: updater.UpdateInfo) -> None:
+        kind = (
+            "instalatorul" if up.context == install_context.CONTEXT_INSTALLED else "versiunea portabilă"
+        )
         if messagebox.askyesno(
             config.APP_NAME,
-            f"O versiune nouă este disponibilă ({up.latest_version}). O deschizi în browser?",
+            f"O versiune nouă este disponibilă ({up.latest_version}). "
+            f"Deschizi {kind} în browser?",
         ) and up.download_url:
             import webbrowser
 
