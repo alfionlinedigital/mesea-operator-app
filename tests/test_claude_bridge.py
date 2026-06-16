@@ -72,3 +72,26 @@ def test_write_then_scrub_round_trip_leaves_no_token(tmp_path):
     claude_bridge.scrub_token(p)
     assert config.TOKEN_ENV_VAR not in _read(p)["env"]
     assert _read(p)["env"]["KEEP"] == "1"
+
+
+def test_launch_claude_runs_in_workspace_cwd_without_positional_arg(monkeypatch):
+    """Claude Code resolves .mcp.json / .claude/settings.json / CLAUDE.md relative
+    to its working directory, so the workspace MUST be the child cwd — not an argv
+    member. Passing it positionally makes the CLI treat the path as the initial
+    prompt and leaves the project root at the launcher's own (install) dir, so the
+    workspace `mesea` MCP server never loads."""
+    captured: dict = {}
+
+    class _FakePopen:
+        def __init__(self, argv, cwd=None, **kwargs):
+            captured["argv"] = argv
+            captured["cwd"] = cwd
+
+    monkeypatch.setattr(claude_bridge.subprocess, "Popen", _FakePopen)
+
+    workspace_dir = r"C:\Users\acct\mesea-operator"
+    claude_bridge.launch_claude("claude.exe", workspace_dir)
+
+    assert captured["cwd"] == workspace_dir
+    assert captured["argv"] == ["claude.exe"]
+    assert workspace_dir not in captured["argv"]
