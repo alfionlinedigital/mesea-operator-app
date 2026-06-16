@@ -107,10 +107,14 @@ def find_claude_executable() -> str | None:
 
 
 def launch_claude(executable: str, workspace_dir: str) -> subprocess.Popen:
-    """Start the Claude app/CLI pointed at the workspace folder, detached.
+    """Start Claude Code with the operator workspace as its project root.
 
-    The folder argument is best-effort; if the desktop app ignores it the
-    user picks the folder once and Claude remembers it. Returns the Popen so
-    the launcher can wait for exit to trigger the scrub.
+    Claude Code resolves ``.mcp.json``, ``.claude/settings.json`` and ``CLAUDE.md``
+    relative to its working directory, so the workspace is handed over as the child
+    ``cwd`` — never as a positional argument. A positional arg is read by the CLI as
+    the initial *prompt* (it would leak the folder path into the chat), and without
+    an explicit ``cwd`` the child inherits the launcher's own install dir as the
+    project root — leaving the workspace's ``mesea`` MCP server unloaded. Returns the
+    Popen so the launcher can wait for exit and then scrub the token.
     """
-    return subprocess.Popen([executable, workspace_dir])
+    return subprocess.Popen([executable], cwd=workspace_dir)
