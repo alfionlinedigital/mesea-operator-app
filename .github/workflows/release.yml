@@ -9,7 +9,7 @@ permissions:
   contents: write  # create releases + upload assets
 
 env:
-  APP_VERSION: "0.3.2"
+  APP_VERSION: "0.3.3"
 
 jobs:
   build:

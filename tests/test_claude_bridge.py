@@ -74,6 +74,62 @@ def test_write_then_scrub_round_trip_leaves_no_token(tmp_path):
     assert _read(p)["env"]["KEEP"] == "1"
 
 
+def test_write_demo_devices_creates_env_keys(tmp_path):
+    p = tmp_path / "settings.json"
+    claude_bridge.write_demo_devices(p, "dev-tab", "dev-phone")
+    data = _read(p)
+    assert data["env"][config.DEMO_TABLET_ENV_VAR] == "dev-tab"
+    assert data["env"][config.DEMO_PHONE_ENV_VAR] == "dev-phone"
+
+
+def test_write_demo_devices_preserves_token_and_other_keys(tmp_path):
+    p = tmp_path / "settings.json"
+    claude_bridge.write_token(p, "msk_live_keep", config.MCP_URL)
+    p.write_text(json.dumps({**_read(p), "theme": "dark"}))
+    claude_bridge.write_demo_devices(p, "dev-tab", "dev-phone")
+    data = _read(p)
+    assert data["env"][config.TOKEN_ENV_VAR] == "msk_live_keep"
+    assert data["env"][config.MCP_URL_ENV_VAR] == config.MCP_URL
+    assert data["theme"] == "dark"
+    assert data["env"][config.DEMO_TABLET_ENV_VAR] == "dev-tab"
+
+
+def test_write_demo_devices_drops_key_when_id_missing(tmp_path):
+    p = tmp_path / "settings.json"
+    claude_bridge.write_demo_devices(p, "dev-tab", "dev-phone")
+    claude_bridge.write_demo_devices(p, "dev-tab", None)  # phone deselected
+    data = _read(p)
+    assert data["env"][config.DEMO_TABLET_ENV_VAR] == "dev-tab"
+    assert config.DEMO_PHONE_ENV_VAR not in data["env"]
+
+
+def test_scrub_demo_devices_leaves_token_untouched(tmp_path):
+    p = tmp_path / "settings.json"
+    claude_bridge.write_token(p, "msk_live_keep", config.MCP_URL)
+    claude_bridge.write_demo_devices(p, "dev-tab", "dev-phone")
+    claude_bridge.scrub_demo_devices(p)
+    data = _read(p)
+    assert config.DEMO_TABLET_ENV_VAR not in data["env"]
+    assert config.DEMO_PHONE_ENV_VAR not in data["env"]
+    assert data["env"][config.TOKEN_ENV_VAR] == "msk_live_keep"
+    assert data["env"][config.MCP_URL_ENV_VAR] == config.MCP_URL
+
+
+def test_scrub_demo_devices_idempotent_and_safe_on_missing_file(tmp_path):
+    p = tmp_path / "nope.json"
+    claude_bridge.scrub_demo_devices(p)  # must not raise
+    claude_bridge.write_demo_devices(p, "t", "ph")
+    claude_bridge.scrub_demo_devices(p)
+    claude_bridge.scrub_demo_devices(p)  # second scrub no-op
+
+
+def test_demo_devices_round_trip_drops_empty_env_block(tmp_path):
+    p = tmp_path / "settings.json"
+    claude_bridge.write_demo_devices(p, "t", "ph")
+    claude_bridge.scrub_demo_devices(p)
+    assert "env" not in _read(p)
+
+
 def test_launch_claude_runs_in_workspace_cwd_without_positional_arg(monkeypatch):
     """Claude Code resolves .mcp.json / .claude/settings.json / CLAUDE.md relative
     to its working directory, so the workspace MUST be the child cwd — not an argv
