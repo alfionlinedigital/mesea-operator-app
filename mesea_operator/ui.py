@@ -20,6 +20,8 @@ from . import (
     claude_bridge,
     config,
     credential_store,
+    device_picker,
+    device_store,
     install_context,
     instance_guard,
     oauth_client,
@@ -59,13 +61,18 @@ class OperatorApp:
         self.auth_btn = ttk.Button(wrap, text="Conectează-te", command=self.on_authorize)
         self.auth_btn.pack(fill="x", pady=4)
 
+        self.devices_btn = ttk.Button(wrap, text="Dispozitive demo", command=self.on_devices)
+        self.devices_btn.pack(fill="x", pady=4)
+
         self.signout_btn = ttk.Button(wrap, text="Deconectare", command=self.on_signout)
         self.signout_btn.pack(fill="x", pady=4)
 
         ttk.Label(wrap, text=f"v{__version__}", foreground="grey").pack(side="bottom", anchor="e")
 
-        # Safety: scrub any token left in settings.json by a prior crashed run.
+        # Safety: scrub any token / demo-device IDs left in settings.json by a
+        # prior crashed run before they can leak into an unrelated session.
         claude_bridge.scrub_token(claude_bridge.settings_path())
+        claude_bridge.scrub_demo_devices(claude_bridge.settings_path())
         self._refresh_from_store()
         self.root.after(150, self._enforce_single_instance)
         self.root.after(200, self._startup_tasks)
@@ -91,6 +98,7 @@ class OperatorApp:
     def _set_connected(self, connected: bool) -> None:
         self.launch_btn.state(["!disabled"] if connected else ["disabled"])
         self.signout_btn.state(["!disabled"] if connected else ["disabled"])
+        self.devices_btn.state(["!disabled"] if connected else ["disabled"])
         self.auth_btn.config(text="Reautentificare" if connected else "Conectează-te")
 
     # --- single-instance guard (portable) ------------------------------------
@@ -181,16 +189,16 @@ class OperatorApp:
                 "Aplicația Claude nu a fost găsită. Token-ul a fost pregătit; "
                 "deschide Claude manual și alege folderul mesea-operator.",
             )
-            claude_bridge.write_token(claude_bridge.settings_path(), cred.access_token, config.MCP_URL)
+            self._stage_session_env(cred.access_token)
             return
 
-        claude_bridge.write_token(claude_bridge.settings_path(), cred.access_token, config.MCP_URL)
+        self._stage_session_env(cred.access_token)
         self._set_status("Se actualizează workspace-ul…")
 
         def work() -> None:
             ws = workspace.ensure_workspace(cred.access_token)
             if ws.status == "error":
-                claude_bridge.scrub_token(claude_bridge.settings_path())
+                self._scrub_session_env()
                 self.root.after(
                     0,
                     lambda: messagebox.showerror(
@@ -205,18 +213,37 @@ class OperatorApp:
                 proc = claude_bridge.launch_claude(exe, str(ws.path))
                 proc.wait()
             finally:
-                claude_bridge.scrub_token(claude_bridge.settings_path())
+                self._scrub_session_env()
                 self._set_status("Claude s-a închis. Token-ul a fost retras din config.")
                 self.root.after(0, self._refresh_from_store)
 
         threading.Thread(target=work, daemon=True).start()
+
+    def _stage_session_env(self, token: str) -> None:
+        """Write the token + saved demo-device IDs into the Claude settings env."""
+        path = claude_bridge.settings_path()
+        claude_bridge.write_token(path, token, config.MCP_URL)
+        chosen = device_store.load()
+        claude_bridge.write_demo_devices(path, chosen.tablet_id, chosen.phone_id)
+
+    def _scrub_session_env(self) -> None:
+        path = claude_bridge.settings_path()
+        claude_bridge.scrub_token(path)
+        claude_bridge.scrub_demo_devices(path)
+
+    def on_devices(self) -> None:
+        cred = credential_store.load()
+        if not cred:
+            messagebox.showwarning(config.APP_NAME, "Conectează-te mai întâi.")
+            return
+        device_picker.DevicePickerDialog(self.root, cred.access_token)
 
     def on_signout(self) -> None:
         cred = credential_store.load()
         if cred:
             threading.Thread(target=lambda: api.revoke(cred.access_token), daemon=True).start()
         credential_store.clear()
-        claude_bridge.scrub_token(claude_bridge.settings_path())
+        self._scrub_session_env()
         self._refresh_from_store()
 
 

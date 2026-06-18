@@ -55,8 +55,8 @@ def write_token(path: Path, token: str, mcp_url: str | None = None) -> None:
     _write(path, data)
 
 
-def scrub_token(path: Path) -> None:
-    """Remove the operator token (and MCP url) from settings. Idempotent."""
+def _scrub_keys(path: Path, keys: tuple[str, ...]) -> None:
+    """Remove the given keys from the settings ``env`` block. Idempotent."""
     if not path.exists():
         return
     data = _read(path)
@@ -64,7 +64,7 @@ def scrub_token(path: Path) -> None:
     if not isinstance(env, dict):
         return
     changed = False
-    for key in (config.TOKEN_ENV_VAR, config.MCP_URL_ENV_VAR):
+    for key in keys:
         if key in env:
             del env[key]
             changed = True
@@ -75,6 +75,41 @@ def scrub_token(path: Path) -> None:
     else:
         data.pop("env", None)
     _write(path, data)
+
+
+def scrub_token(path: Path) -> None:
+    """Remove the operator token (and MCP url) from settings. Idempotent."""
+    _scrub_keys(path, (config.TOKEN_ENV_VAR, config.MCP_URL_ENV_VAR))
+
+
+def write_demo_devices(path: Path, tablet_id: str | None, phone_id: str | None) -> None:
+    """Merge the chosen demo device IDs into the settings ``env`` block.
+
+    A ``None``/empty id removes that single key (e.g. only a tablet is picked),
+    so the env never carries a stale half of the pair. Other keys are preserved.
+    """
+    data = _read(path)
+    env = data.get("env")
+    if not isinstance(env, dict):
+        env = {}
+    for key, value in (
+        (config.DEMO_TABLET_ENV_VAR, tablet_id),
+        (config.DEMO_PHONE_ENV_VAR, phone_id),
+    ):
+        if value:
+            env[key] = value
+        else:
+            env.pop(key, None)
+    if env:
+        data["env"] = env
+    else:
+        data.pop("env", None)
+    _write(path, data)
+
+
+def scrub_demo_devices(path: Path) -> None:
+    """Remove both demo device-ID keys from settings. Idempotent."""
+    _scrub_keys(path, (config.DEMO_TABLET_ENV_VAR, config.DEMO_PHONE_ENV_VAR))
 
 
 def find_claude_executable() -> str | None:

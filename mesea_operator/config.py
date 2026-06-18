@@ -31,6 +31,9 @@ REVOKE_URL = os.environ.get("MESEA_REVOKE_URL", "https://mesea.ro/api/v1/oauth/r
 # Identity probe — confirms an issued token works without exposing its value.
 ME_URL = os.environ.get("MESEA_ME_URL", "https://mesea.ro/api/v1/me")
 
+# Admin-only device directory — backs the demo-device picker (tablet + phone).
+DEVICES_URL = os.environ.get("MESEA_DEVICES_URL", "https://mesea.ro/api/v1/devices")
+
 # Operator workspace bundle — the private mesea-operator skills/playbooks,
 # served behind the OAuth wall as a gzipped tar. The launcher downloads it with
 # the operator token instead of cloning the (private) repo, so account managers
@@ -58,6 +61,10 @@ SINGLE_INSTANCE_MUTEX = "MeseaOperatorMutex"
 KEYRING_SERVICE = "mesea-operator"
 TOKEN_ENV_VAR = "MESEA_API_TOKEN"
 MCP_URL_ENV_VAR = "MESEA_MCP_URL"
+
+# Demo-device env vars the setup-demo-devices / demo-onboarding skills read.
+DEMO_TABLET_ENV_VAR = "DEMO_TABLET_DEVICE_ID"
+DEMO_PHONE_ENV_VAR = "DEMO_PHONE_DEVICE_ID"
 
 # Loopback flow tuning.
 CALLBACK_PATH = "/cb"
