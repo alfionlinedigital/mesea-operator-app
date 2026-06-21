@@ -4,6 +4,8 @@ import io
 import json
 import urllib.error
 
+import pytest
+
 from mesea_operator import api
 
 
@@ -55,12 +57,31 @@ def test_is_token_valid_false_on_401(monkeypatch):
     assert api.is_token_valid("expired") is False
 
 
-def test_is_token_valid_false_on_network_error(monkeypatch):
+def test_is_token_valid_false_on_403(monkeypatch):
+    def forbidden(*_a, **_k):
+        raise urllib.error.HTTPError("u", 403, "Forbidden", {}, io.BytesIO(b"nope"))
+
+    monkeypatch.setattr(api.urllib.request, "urlopen", forbidden)
+    assert api.is_token_valid("revoked") is False
+
+
+def test_is_token_valid_raises_unreachable_on_5xx(monkeypatch):
+    """A transient server fault must NOT be conflated with a revoked token."""
+    def server_error(*_a, **_k):
+        raise urllib.error.HTTPError("u", 503, "Service Unavailable", {}, io.BytesIO(b""))
+
+    monkeypatch.setattr(api.urllib.request, "urlopen", server_error)
+    with pytest.raises(api.TokenUnreachable):
+        api.is_token_valid("t")
+
+
+def test_is_token_valid_raises_unreachable_on_network_error(monkeypatch):
     def boom(*_a, **_k):
         raise urllib.error.URLError("offline")
 
     monkeypatch.setattr(api.urllib.request, "urlopen", boom)
-    assert api.is_token_valid("t") is False
+    with pytest.raises(api.TokenUnreachable):
+        api.is_token_valid("t")
 
 
 def test_revoke_success(monkeypatch):

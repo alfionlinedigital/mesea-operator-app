@@ -25,6 +25,8 @@ from . import (
     install_context,
     instance_guard,
     oauth_client,
+    prompts,
+    startup,
     updater,
     workspace,
 )
@@ -63,6 +65,10 @@ class OperatorApp:
         )
         self.resume_btn.pack(fill="x", pady=4)
 
+        # Locked until the startup probe confirms the stored token is valid —
+        # a present credential alone must never unlock a launch (fail-open gap).
+        self._set_launch_enabled(False)
+
         self.auth_btn = ttk.Button(wrap, text="Conectează-te", command=self.on_authorize)
         self.auth_btn.pack(fill="x", pady=4)
 
@@ -79,7 +85,7 @@ class OperatorApp:
         claude_bridge.scrub_token(claude_bridge.settings_path())
         claude_bridge.scrub_demo_devices(claude_bridge.settings_path())
         self._refresh_from_store()
-        self.root.after(150, self._enforce_single_instance)
+        self.root.after(150, lambda: prompts.enforce_single_instance(self._context))
         self.root.after(200, self._startup_tasks)
 
     # --- state ---------------------------------------------------------------
@@ -101,62 +107,71 @@ class OperatorApp:
             self._set_connected(False)
 
     def _set_connected(self, connected: bool) -> None:
-        self.launch_btn.state(["!disabled"] if connected else ["disabled"])
-        self.resume_btn.state(["!disabled"] if connected else ["disabled"])
+        """Toggle the account-level chrome (sign-out / devices / auth label).
+
+        Launch + resume are deliberately NOT touched here: a stored credential
+        is not proof the token still works, so they stay locked until the
+        startup probe confirms the token (``_set_launch_enabled``). This keeps
+        the fail-open window — buttons live ~200ms before validation — closed.
+        """
         self.signout_btn.state(["!disabled"] if connected else ["disabled"])
         self.devices_btn.state(["!disabled"] if connected else ["disabled"])
         self.auth_btn.config(text="Reautentificare" if connected else "Conectează-te")
+        if not connected:
+            self._set_launch_enabled(False)
 
-    # --- single-instance guard (portable) ------------------------------------
-    def _enforce_single_instance(self) -> None:
-        """Portable builds have no installer to gate the binary swap, so detect
-        other running copies and offer to close them (frees the on-disk exe for
-        a self-update and avoids two windows fighting over the same token)."""
-        if self._context != install_context.CONTEXT_PORTABLE:
-            return
-        try:
-            others = instance_guard.find_other_instances()
-        except Exception:
-            return  # process enumeration is best-effort; never block startup
-        if not others:
-            return
-
-        names = ", ".join(sorted({o.name or f"PID {o.pid}" for o in others}))
-        if not messagebox.askyesno(
-            config.APP_NAME,
-            f"Alte instanțe Mesea Operator rulează deja ({names}). "
-            "Le închizi ca să continui cu această versiune?",
-        ):
-            return
-
-        results = instance_guard.terminate([o.pid for o in others])
-        failed = [pid for pid, closed in results.items() if not closed]
-        if failed:
-            messagebox.showwarning(
-                config.APP_NAME,
-                "Nu am putut închide toate instanțele "
-                f"(PID: {', '.join(map(str, failed))}). Închide-le manual.",
-            )
+    def _set_launch_enabled(self, enabled: bool) -> None:
+        """Enable launch + resume only when the token is DEFINITIVELY valid."""
+        self.launch_btn.state(["!disabled"] if enabled else ["disabled"])
+        self.resume_btn.state(["!disabled"] if enabled else ["disabled"])
 
     # --- background startup --------------------------------------------------
     def _startup_tasks(self) -> None:
+        """Validate the stored token and check for updates on one worker thread.
+
+        Ordering is deterministic: the token outcome is applied first (a blocked
+        token takes precedence over an update prompt), then — and only once — an
+        available update is surfaced afterwards, so the two dialogs can never
+        stack in an undefined order. Launch + resume are enabled ONLY on a
+        definitively valid token; an unreachable server fails closed quietly.
+        """
+
         def work() -> None:
             cred = credential_store.load()
-            if cred and not api.is_token_valid(cred.access_token):
-                self.root.after(0, self._block_invalid_token)
-                up = updater.check_for_update(context=self._context)
-                if up.available:
-                    self.root.after(0, lambda: self._prompt_update(up))
-                return
-            if cred:
-                ws = workspace.ensure_workspace(cred.access_token)
-                if ws.status == "error":
-                    self._set_status(f"Atenție workspace: {ws.detail}")
+            outcome = startup.evaluate_token(cred.access_token if cred else None)
+            self.root.after(0, lambda: self._apply_token_outcome(outcome, cred))
             up = updater.check_for_update(context=self._context)
             if up.available:
-                self.root.after(0, lambda: self._prompt_update(up))
+                self.root.after(0, lambda: prompts.prompt_update(up))
 
         threading.Thread(target=work, daemon=True).start()
+
+    def _apply_token_outcome(
+        self, outcome: startup.TokenOutcome, cred: credential_store.StoredCredential | None
+    ) -> None:
+        """Marshal the worker's token verdict onto the Tk main loop (main-thread)."""
+        if outcome is startup.TokenOutcome.VALID:
+            self._set_launch_enabled(True)
+            if cred:
+                threading.Thread(
+                    target=lambda: self._sync_workspace(cred.access_token), daemon=True
+                ).start()
+        elif outcome is startup.TokenOutcome.INVALID:
+            self._block_invalid_token()
+        elif outcome is startup.TokenOutcome.UNREACHABLE:
+            self._set_launch_enabled(False)
+            self.status.config(
+                text="Nu am putut verifica sesiunea (server indisponibil). "
+                "Verifică conexiunea și apasă „Reautentificare” pentru a reîncerca."
+            )
+        # NONE: not signed in — _refresh_from_store already set the prompt.
+
+    def _sync_workspace(self, token: str) -> None:
+        """Refresh the operator workspace in the background (worker thread)."""
+        ws = workspace.ensure_workspace(token)
+        if ws.status == "error":
+            detail = ws.detail
+            self.root.after(0, lambda: self.status.config(text=f"Atenție workspace: {detail}"))
 
     def _block_invalid_token(self) -> None:
         """Stored token is expired/revoked: block the main flow and prompt re-auth.
@@ -177,19 +192,6 @@ class OperatorApp:
             "Reautentifică-te (rulează din nou autentificarea OAuth) "
             "pentru a continua.",
         )
-
-    def _prompt_update(self, up: updater.UpdateInfo) -> None:
-        kind = (
-            "instalatorul" if up.context == install_context.CONTEXT_INSTALLED else "versiunea portabilă"
-        )
-        if messagebox.askyesno(
-            config.APP_NAME,
-            f"O versiune nouă este disponibilă ({up.latest_version}). "
-            f"Deschizi {kind} în browser?",
-        ) and up.download_url:
-            import webbrowser
-
-            webbrowser.open(up.download_url)
 
     # --- actions -------------------------------------------------------------
     def on_authorize(self) -> None:
