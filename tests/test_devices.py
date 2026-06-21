@@ -59,6 +59,48 @@ def test_fetch_devices_builds_query_for_q_and_unassigned(monkeypatch):
     assert "unassigned=true" in seen["url"]
 
 
+def test_fetch_devices_builds_query_for_mdm(monkeypatch):
+    seen = _capture_url(monkeypatch)
+    devices.fetch_devices("t", mdm="scalefusion")
+    assert "mdm=scalefusion" in seen["url"]
+
+
+def test_fetch_devices_builds_query_for_all_filters(monkeypatch):
+    seen = _capture_url(monkeypatch)
+    devices.fetch_devices("t", q="tab", mdm="hexnode", unassigned=True)
+    assert "q=tab" in seen["url"]
+    assert "mdm=hexnode" in seen["url"]
+    assert "unassigned=true" in seen["url"]
+
+
+def test_fetch_devices_empty_mdm_omitted(monkeypatch):
+    seen = _capture_url(monkeypatch)
+    devices.fetch_devices("t", mdm="")
+    assert "mdm=" not in seen["url"]
+    assert "?" not in seen["url"]
+
+
+def test_fetch_devices_returns_enrichment_fields(monkeypatch):
+    body = json.dumps(
+        {
+            "data": [
+                {
+                    "id": 1,
+                    "device_name": "Tab",
+                    "business_name": "Le Sorelle",
+                    "worker_name": "Bucătar",
+                    "mdm_name": "Scalefusion",
+                }
+            ]
+        }
+    ).encode()
+    _capture_url(monkeypatch, body)
+    [d] = devices.fetch_devices("t")
+    assert d["business_name"] == "Le Sorelle"
+    assert d["worker_name"] == "Bucătar"
+    assert d["mdm_name"] == "Scalefusion"
+
+
 def test_fetch_devices_unassigned_false_is_explicit(monkeypatch):
     seen = _capture_url(monkeypatch)
     devices.fetch_devices("t", unassigned=False)

@@ -151,3 +151,23 @@ def test_launch_claude_runs_in_workspace_cwd_without_positional_arg(monkeypatch)
     assert captured["cwd"] == workspace_dir
     assert captured["argv"] == ["claude.exe"]
     assert workspace_dir not in captured["argv"]
+
+
+def test_launch_claude_resume_passes_resume_flag(monkeypatch):
+    """Resume must add ``--resume`` (so the CLI lists prior conversations) while
+    still running in the workspace cwd — the path stays out of argv."""
+    captured: dict = {}
+
+    class _FakePopen:
+        def __init__(self, argv, cwd=None, **kwargs):
+            captured["argv"] = argv
+            captured["cwd"] = cwd
+
+    monkeypatch.setattr(claude_bridge.subprocess, "Popen", _FakePopen)
+
+    workspace_dir = r"C:\Users\acct\mesea-operator"
+    claude_bridge.launch_claude("claude.exe", workspace_dir, resume=True)
+
+    assert captured["argv"] == ["claude.exe", "--resume"]
+    assert captured["cwd"] == workspace_dir
+    assert workspace_dir not in captured["argv"]

@@ -1,8 +1,9 @@
 """Admin-only device directory lookup for the demo-device picker.
 
 Calls ``GET /api/v1/devices`` (workstream B) with the operator bearer token to
-list registered hardware, optionally filtered by a name/serial substring (``q``)
-or to only-unassigned devices. Pure and list-returning — no Tk — so the picker's
+list registered hardware, optionally filtered by a name/serial substring (``q``),
+an MDM-name substring (``mdm``), or to only devices unassigned to a business
+(``unassigned=true``). Pure and list-returning — no Tk — so the picker's
 networking is unit-testable against a stub server, mirroring ``api.py``.
 """
 
@@ -20,10 +21,14 @@ class DevicesError(Exception):
     """Device lookup failed (HTTP, network, or unparseable response)."""
 
 
-def _build_url(url: str, q: str | None, unassigned: bool | None) -> str:
+def _build_url(
+    url: str, q: str | None, mdm: str | None, unassigned: bool | None
+) -> str:
     params: dict[str, str] = {}
     if q:
         params["q"] = q
+    if mdm:
+        params["mdm"] = mdm
     if unassigned is not None:
         params["unassigned"] = "true" if unassigned else "false"
     if not params:
@@ -35,15 +40,19 @@ def _build_url(url: str, q: str | None, unassigned: bool | None) -> str:
 def fetch_devices(
     token: str,
     q: str | None = None,
+    mdm: str | None = None,
     unassigned: bool | None = None,
     url: str | None = None,
 ) -> list[dict]:
     """Return the device list from the API, raising ``DevicesError`` on failure.
 
     Each item is the raw ``DeviceResponse`` dict (keys read by the caller with
-    ``.get`` so a field rename on the server degrades gracefully, never crashes).
+    ``.get`` so a field rename on the server degrades gracefully, never crashes):
+    ``id``, ``device_name``, ``device_type``, ``serial_number``, ``android_id``,
+    ``business_id``, ``business_name``, ``worker_id``, ``worker_name``,
+    ``mdm_name``.
     """
-    target = _build_url(url or config.DEVICES_URL, q, unassigned)
+    target = _build_url(url or config.DEVICES_URL, q, mdm, unassigned)
     req = urllib.request.Request(
         target,
         headers={"Authorization": f"Bearer {token}", "Accept": "application/json"},

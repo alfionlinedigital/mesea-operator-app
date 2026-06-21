@@ -141,7 +141,9 @@ def find_claude_executable() -> str | None:
     return shutil.which("claude")
 
 
-def launch_claude(executable: str, workspace_dir: str) -> subprocess.Popen:
+def launch_claude(
+    executable: str, workspace_dir: str, resume: bool = False
+) -> subprocess.Popen:
     """Start Claude Code with the operator workspace as its project root.
 
     Claude Code resolves ``.mcp.json``, ``.claude/settings.json`` and ``CLAUDE.md``
@@ -151,5 +153,11 @@ def launch_claude(executable: str, workspace_dir: str) -> subprocess.Popen:
     an explicit ``cwd`` the child inherits the launcher's own install dir as the
     project root — leaving the workspace's ``mesea`` MCP server unloaded. Returns the
     Popen so the launcher can wait for exit and then scrub the token.
+
+    With ``resume=True`` the CLI is started with ``--resume``, which lists the
+    workspace's prior conversations so the AM can pick one to continue. Sessions
+    are stored per-project, so running it in the same ``cwd`` surfaces exactly the
+    operator-workspace history and nothing else.
     """
-    return subprocess.Popen([executable], cwd=workspace_dir)
+    argv = [executable, "--resume"] if resume else [executable]
+    return subprocess.Popen(argv, cwd=workspace_dir)

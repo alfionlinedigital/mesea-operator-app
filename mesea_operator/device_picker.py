@@ -17,10 +17,22 @@ from . import config, device_store, devices
 
 
 def _device_label(d: dict) -> str:
-    """A human row label tolerant of DeviceResponse field renames."""
+    """A human row label tolerant of DeviceResponse field renames.
+
+    Shows the device name + serial, then the assigned business and worker (or a
+    "neasignat" marker when unassigned) and the MDM name, so the AM can tell two
+    otherwise-identical tablets apart by who/where they're assigned.
+    """
     name = d.get("device_name") or d.get("name") or "(fără nume)"
     serial = d.get("serial") or d.get("serial_number")
-    return f"{name} — {serial}" if serial else str(name)
+    head = f"{name} — {serial}" if serial else str(name)
+
+    business = d.get("business_name") or "neasignat"
+    worker = d.get("worker_name")
+    assignment = f"{business} / {worker}" if worker else business
+    mdm = d.get("mdm_name")
+    tail = f"MDM: {mdm}" if mdm else "fără MDM"
+    return f"{head} · {assignment} · {tail}"
 
 
 class DevicePickerDialog:
@@ -31,8 +43,8 @@ class DevicePickerDialog:
         self.win = tk.Toplevel(parent)
         self.win.title("Dispozitive demo")
         self.win.transient(parent)
-        self.win.geometry("460x320")
-        self.win.minsize(420, 300)
+        self.win.geometry("520x400")
+        self.win.minsize(460, 360)
 
         frame = ttk.Frame(self.win, padding=16)
         frame.pack(fill="both", expand=True)
@@ -43,10 +55,16 @@ class DevicePickerDialog:
         search.pack(fill="x", pady=(2, 4))
         search.bind("<Return>", lambda _e: self._reload())
 
+        ttk.Label(frame, text="Filtrează după MDM:").pack(anchor="w")
+        self.mdm_var = tk.StringVar()
+        mdm = ttk.Entry(frame, textvariable=self.mdm_var)
+        mdm.pack(fill="x", pady=(2, 4))
+        mdm.bind("<Return>", lambda _e: self._reload())
+
         self.unassigned_var = tk.BooleanVar(value=False)
         ttk.Checkbutton(
             frame,
-            text="Doar dispozitive neasignate",
+            text="Doar dispozitive neasignate unei afaceri",
             variable=self.unassigned_var,
             command=self._reload,
         ).pack(anchor="w", pady=(0, 8))
@@ -75,12 +93,15 @@ class DevicePickerDialog:
     # --- data loading (worker thread → Tk via after) -------------------------
     def _reload(self) -> None:
         q = self.search_var.get().strip() or None
+        mdm = self.mdm_var.get().strip() or None
         unassigned = True if self.unassigned_var.get() else None
         self.status.config(text="Se încarcă…")
 
         def work() -> None:
             try:
-                found = devices.fetch_devices(self._token, q=q, unassigned=unassigned)
+                found = devices.fetch_devices(
+                    self._token, q=q, mdm=mdm, unassigned=unassigned
+                )
             except devices.DevicesError as exc:
                 self._post(lambda: self._on_error(str(exc)))
                 return
@@ -134,7 +155,9 @@ class DevicePickerDialog:
         device_store.store(tablet_id, phone_id)
         messagebox.showinfo(
             config.APP_NAME,
-            "Dispozitivele demo au fost salvate. Vor fi folosite la următoarea pornire.",
+            "Dispozitivele demo au fost salvate. Vor fi folosite la următoarea "
+            "sesiune Claude Code pe care o pornești din launcher (nu necesită "
+            "repornirea aplicației launcher).",
             parent=self.win,
         )
         self.win.destroy()
