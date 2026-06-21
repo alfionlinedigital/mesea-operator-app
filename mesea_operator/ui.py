@@ -58,6 +58,11 @@ class OperatorApp:
         self.launch_btn.pack(fill="x", pady=4)
         self.launch_btn.config(style="Accent.TButton")
 
+        self.resume_btn = ttk.Button(
+            wrap, text="Reia o conversație", command=self.on_resume
+        )
+        self.resume_btn.pack(fill="x", pady=4)
+
         self.auth_btn = ttk.Button(wrap, text="Conectează-te", command=self.on_authorize)
         self.auth_btn.pack(fill="x", pady=4)
 
@@ -97,6 +102,7 @@ class OperatorApp:
 
     def _set_connected(self, connected: bool) -> None:
         self.launch_btn.state(["!disabled"] if connected else ["disabled"])
+        self.resume_btn.state(["!disabled"] if connected else ["disabled"])
         self.signout_btn.state(["!disabled"] if connected else ["disabled"])
         self.devices_btn.state(["!disabled"] if connected else ["disabled"])
         self.auth_btn.config(text="Reautentificare" if connected else "Conectează-te")
@@ -136,6 +142,12 @@ class OperatorApp:
     def _startup_tasks(self) -> None:
         def work() -> None:
             cred = credential_store.load()
+            if cred and not api.is_token_valid(cred.access_token):
+                self.root.after(0, self._block_invalid_token)
+                up = updater.check_for_update(context=self._context)
+                if up.available:
+                    self.root.after(0, lambda: self._prompt_update(up))
+                return
             if cred:
                 ws = workspace.ensure_workspace(cred.access_token)
                 if ws.status == "error":
@@ -145,6 +157,26 @@ class OperatorApp:
                 self.root.after(0, lambda: self._prompt_update(up))
 
         threading.Thread(target=work, daemon=True).start()
+
+    def _block_invalid_token(self) -> None:
+        """Stored token is expired/revoked: block the main flow and prompt re-auth.
+
+        We disable launch/resume/devices (but keep the auth button live) and tell
+        the AM to re-authorize. The token is not cleared so the account label stays
+        visible; a successful re-authorization overwrites it.
+        """
+        self._set_connected(False)
+        self.status.config(
+            text="Sesiunea a expirat sau a fost revocată. "
+            "Apasă „Reautentificare” pentru a te conecta din nou."
+        )
+        self.auth_btn.config(text="Reautentificare")
+        messagebox.showwarning(
+            config.APP_NAME,
+            "Token-ul tău nu mai este valid (expirat sau revocat). "
+            "Reautentifică-te (rulează din nou autentificarea OAuth) "
+            "pentru a continua.",
+        )
 
     def _prompt_update(self, up: updater.UpdateInfo) -> None:
         kind = (
@@ -178,6 +210,14 @@ class OperatorApp:
         threading.Thread(target=work, daemon=True).start()
 
     def on_launch(self) -> None:
+        self._launch(resume=False)
+
+    def on_resume(self) -> None:
+        """Start Claude Code with ``--resume`` so the AM can pick a prior
+        conversation in the operator workspace to continue."""
+        self._launch(resume=True)
+
+    def _launch(self, resume: bool) -> None:
         cred = credential_store.load()
         if not cred:
             messagebox.showwarning(config.APP_NAME, "Conectează-te mai întâi.")
@@ -210,7 +250,7 @@ class OperatorApp:
 
             self._set_status("Se pornește Claude…")
             try:
-                proc = claude_bridge.launch_claude(exe, str(ws.path))
+                proc = claude_bridge.launch_claude(exe, str(ws.path), resume=resume)
                 proc.wait()
             finally:
                 self._scrub_session_env()
