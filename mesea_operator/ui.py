@@ -167,11 +167,11 @@ class OperatorApp:
         # NONE: not signed in — _refresh_from_store already set the prompt.
 
     def _sync_workspace(self, token: str) -> None:
-        """Refresh the operator workspace in the background (worker thread)."""
+        """Refresh the workspace in the background; surface a failed/stale refresh."""
         ws = workspace.ensure_workspace(token)
-        if ws.status == "error":
-            detail = ws.detail
-            self.root.after(0, lambda: self.status.config(text=f"Atenție workspace: {detail}"))
+        message = startup.workspace_status_message(ws)
+        if message:
+            self.root.after(0, lambda: self.status.config(text=message))
 
     def _block_invalid_token(self) -> None:
         """Stored token is expired/revoked: block the main flow and prompt re-auth.

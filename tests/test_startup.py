@@ -12,7 +12,9 @@ live in ``startup`` and are proven here. The UI dispatches on the returned
 so each outcome below maps 1:1 to one of those UI branches.
 """
 
-from mesea_operator import api, startup
+from pathlib import Path
+
+from mesea_operator import api, startup, workspace
 
 
 def test_none_token_returns_none_outcome():
@@ -41,3 +43,29 @@ def test_unreachable_does_not_trigger_revoked_block(monkeypatch):
     outcome = startup.evaluate_token("maybe-good")
     assert outcome is startup.TokenOutcome.UNREACHABLE
     assert outcome is not startup.TokenOutcome.INVALID  # never conflated with revoked
+
+
+def _ws(status: str, detail: str = "", commit: str | None = None) -> workspace.WorkspaceResult:
+    return workspace.WorkspaceResult(Path("ws"), status, detail, commit)
+
+
+def test_workspace_message_none_when_refresh_succeeds():
+    # downloaded / up-to-date are silent — nothing to warn about.
+    assert startup.workspace_status_message(_ws("downloaded", commit="abc")) is None
+    assert startup.workspace_status_message(_ws("up-to-date", commit="abc")) is None
+
+
+def test_workspace_message_surfaces_hard_error():
+    msg = startup.workspace_status_message(_ws("error", detail="disk full"))
+    assert msg == "Atenție workspace: disk full"
+
+
+def test_workspace_message_surfaces_stale_skip_with_commit():
+    # A frozen workspace must be visible, named by the (short) commit in use.
+    msg = startup.workspace_status_message(_ws("skipped", commit="abc1234def"))
+    assert msg == "Workspace neactualizat; se folosește ultima versiune (commit abc1234)."
+
+
+def test_workspace_message_stale_skip_without_commit():
+    msg = startup.workspace_status_message(_ws("skipped", commit=None))
+    assert msg == "Workspace neactualizat; se folosește ultima versiune."
