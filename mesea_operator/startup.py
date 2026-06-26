@@ -10,7 +10,7 @@ from __future__ import annotations
 
 from enum import Enum
 
-from . import api
+from . import api, workspace
 
 
 class TokenOutcome(Enum):
@@ -42,3 +42,20 @@ def evaluate_token(token: str | None) -> TokenOutcome:
         return TokenOutcome.VALID if api.is_token_valid(token) else TokenOutcome.INVALID
     except api.TokenUnreachable:
         return TokenOutcome.UNREACHABLE
+
+
+def workspace_status_message(result: workspace.WorkspaceResult) -> str | None:
+    """Status-line text for a workspace refresh outcome, or ``None`` when it
+    succeeded (``downloaded`` / ``up-to-date`` need no message).
+
+    Surfaces BOTH failure shapes so a frozen workspace is visible: a hard
+    ``error`` (nothing usable on disk) and a ``skipped`` refresh that fell back
+    to the last-good copy — named by its short commit when known, since a silent
+    stale fallback is exactly how an un-updating workspace went unnoticed.
+    """
+    if result.status == "error":
+        return f"Atenție workspace: {result.detail}"
+    if result.status == "skipped":
+        version = f" (commit {result.commit[:7]})" if result.commit else ""
+        return f"Workspace neactualizat; se folosește ultima versiune{version}."
+    return None

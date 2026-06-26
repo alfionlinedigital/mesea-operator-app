@@ -10,4 +10,4 @@ other module (oauth_client, credential_store, claude_bridge, workspace,
 updater, config) is importable and unit-testable on machines without Tk.
 """
 
-__version__ = "0.3.4"
+__version__ = "0.3.5"

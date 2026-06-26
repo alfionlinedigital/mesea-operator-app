@@ -14,7 +14,10 @@ is still launchable).
 from __future__ import annotations
 
 import io
+import os
 import shutil
+import stat
+import sys
 import tarfile
 import tempfile
 import urllib.error
@@ -30,6 +33,7 @@ class WorkspaceResult:
     path: Path
     status: str  # "downloaded" | "up-to-date" | "skipped" | "error"
     detail: str = ""
+    commit: str | None = None  # resolved workspace commit (ETag), for display
 
 
 def default_workspace_dir() -> Path:
@@ -56,6 +60,7 @@ def ensure_workspace(
     """
     dest = dest or default_workspace_dir()
     url = url or config.WORKSPACE_URL
+    sweep_stale_artifacts(dest)
 
     if not token:
         if _is_present(dest):
@@ -75,7 +80,7 @@ def ensure_workspace(
             etag = resp.headers.get("ETag", "")
     except urllib.error.HTTPError as exc:
         if exc.code == 304:
-            return WorkspaceResult(dest, "up-to-date")
+            return WorkspaceResult(dest, "up-to-date", commit=_strip_etag(prior_etag))
         return _fallback(dest, f"download failed (HTTP {exc.code})")
     except urllib.error.URLError as exc:
         return _fallback(dest, f"network error: {exc.reason}")
@@ -87,7 +92,7 @@ def ensure_workspace(
 
     if etag:
         _etag_path(dest).write_text(etag)
-    return WorkspaceResult(dest, "downloaded")
+    return WorkspaceResult(dest, "downloaded", commit=_strip_etag(etag))
 
 
 def _read_prior_etag(dest: Path) -> str | None:
@@ -98,31 +103,98 @@ def _read_prior_etag(dest: Path) -> str | None:
     return value or None
 
 
+def _strip_etag(etag: str | None) -> str | None:
+    """Bare commit SHA from an ETag header value (strips the surrounding quotes)."""
+    return etag.strip('"') if etag else None
+
+
 def _fallback(dest: Path, detail: str) -> WorkspaceResult:
-    """Present-but-stale is still launchable; only hard-fail with nothing there."""
+    """Present-but-stale is still launchable; only hard-fail with nothing there.
+
+    Carries the commit still on disk so the UI can name the stale version in use.
+    """
     if _is_present(dest):
-        return WorkspaceResult(dest, "skipped", f"{detail}; using existing")
+        return WorkspaceResult(
+            dest, "skipped", f"{detail}; using existing", commit=_strip_etag(_read_prior_etag(dest))
+        )
     return WorkspaceResult(dest, "error", detail)
 
 
+def sweep_stale_artifacts(dest: Path) -> None:
+    """Remove orphaned update artifacts so a stuck leftover can't wedge updates.
+
+    Targets the legacy fixed-name backup (``<name>.bak`` written by older builds —
+    a read-only git pack inside it could survive cleanup and block every later
+    swap) and any abandoned ``.mesea-ws-old-*`` retired dirs from interrupted
+    runs. Active ``.mesea-ws-new-*`` staging dirs are left alone. Best-effort and
+    idempotent; never raises.
+    """
+    parent = dest.parent
+    if not parent.exists():
+        return
+    legacy_bak = parent / (dest.name + ".bak")
+    if legacy_bak.exists():
+        _force_rmtree(legacy_bak)
+    for orphan in parent.glob(".mesea-ws-old-*"):
+        _force_rmtree(orphan)
+
+
 def _extract_atomically(tar_gz: bytes, dest: Path) -> None:
-    """Extract into a sibling staging dir, then swap it into place."""
+    """Extract into a sibling staging dir, then swap it into place.
+
+    The swap never depends on deleting the old copy: the previous workspace is
+    renamed to a UNIQUE throwaway dir, so an undeletable leftover (e.g. a
+    read-only git pack on Windows) can't block the rename and wedge future
+    updates. Cleanup of the staging/retired dirs is best-effort.
+    """
     dest.parent.mkdir(parents=True, exist_ok=True)
-    staging = Path(tempfile.mkdtemp(prefix=".mesea-ws-", dir=str(dest.parent)))
-    backup = dest.parent / (dest.name + ".bak")
+    staging = Path(tempfile.mkdtemp(prefix=".mesea-ws-new-", dir=str(dest.parent)))
+    retired: Path | None = None
     try:
         with tarfile.open(fileobj=io.BytesIO(tar_gz), mode="r:gz") as tar:
             _safe_extractall(tar, staging)
         if dest.exists():
-            if backup.exists():
-                shutil.rmtree(backup, ignore_errors=True)
-            dest.rename(backup)
+            retired = _reserve_unique_dir(dest.parent, ".mesea-ws-old-")
+            dest.rename(retired)
         staging.rename(dest)
     finally:
-        if staging.exists():
-            shutil.rmtree(staging, ignore_errors=True)
-        if backup.exists():
-            shutil.rmtree(backup, ignore_errors=True)
+        _force_rmtree(staging)
+        if retired is not None:
+            _force_rmtree(retired)
+
+
+def _reserve_unique_dir(parent: Path, prefix: str) -> Path:
+    """A unique, currently-free path in ``parent``.
+
+    ``mkdtemp`` reserves a unique name atomically; we drop the empty dir so the
+    following ``rename`` onto it succeeds on Windows (which refuses to rename onto
+    an existing directory). Single-writer, so the reserve→rename gap is safe.
+    """
+    reserved = Path(tempfile.mkdtemp(prefix=prefix, dir=str(parent)))
+    reserved.rmdir()
+    return reserved
+
+
+def _force_rmtree(path: Path) -> None:
+    """Recursively delete ``path``, clearing read-only bits that defeat
+    ``shutil.rmtree`` on Windows (git marks pack objects read-only). A file held
+    by a live handle is left behind rather than raising — unique retire names mean
+    a survivor can never block a future swap.
+    """
+    if not path.exists():
+        return
+
+    def _on_error(func, target, _exc):  # shutil onexc/onerror callback
+        try:
+            os.chmod(target, stat.S_IWRITE)
+            func(target)
+        except OSError:
+            pass
+
+    if sys.version_info >= (3, 12):
+        shutil.rmtree(path, onexc=_on_error)
+    else:
+        shutil.rmtree(path, onerror=_on_error)
 
 
 def _safe_extractall(tar: tarfile.TarFile, dest: Path) -> None:
