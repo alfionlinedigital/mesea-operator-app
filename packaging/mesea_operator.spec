@@ -18,12 +18,18 @@ from PyInstaller.utils.hooks import collect_data_files, collect_submodules
 # CWD — so anchor everything to the repo root via SPECPATH.
 ROOT = os.path.abspath(os.path.join(SPECPATH, os.pardir))
 
-datas = collect_data_files("sv_ttk")
-hiddenimports = collect_submodules("keyring.backends") + [
-    "keyring.backends.Windows",
-    "keyring.backends.macOS",
-    "keyring.backends.SecretService",
-]
+datas = collect_data_files("sv_ttk") + collect_data_files("certifi")
+hiddenimports = (
+    collect_submodules("keyring.backends")
+    + [
+        "keyring.backends.Windows",
+        "keyring.backends.macOS",
+        "keyring.backends.SecretService",
+    ]
+    # sentry_sdk lazily imports its integrations; collect them so error
+    # reporting works in the frozen build (it degrades gracefully if missing).
+    + collect_submodules("sentry_sdk")
+)
 
 a = Analysis(
     [os.path.join(ROOT, "app.py")],

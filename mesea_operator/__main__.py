@@ -15,6 +15,12 @@ def main() -> None:
     if "--version" in sys.argv:
         print(__version__)
         return
+    # File logging + error reporting come up before the UI so a startup failure
+    # is recorded. Both degrade gracefully and never block launch.
+    from mesea_operator import errors, logs
+
+    logs.setup_logging()
+    errors.init_error_reporting(__version__)
     from mesea_operator.ui import main as ui_main  # lazy so --version needs no Tk
 
     ui_main()

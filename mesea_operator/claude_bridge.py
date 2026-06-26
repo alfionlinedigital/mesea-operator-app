@@ -112,6 +112,20 @@ def scrub_demo_devices(path: Path) -> None:
     _scrub_keys(path, (config.DEMO_TABLET_ENV_VAR, config.DEMO_PHONE_ENV_VAR))
 
 
+def stage_session(token: str, mcp_url: str | None, tablet_id: str | None, phone_id: str | None) -> None:
+    """Write the token + chosen demo-device IDs into the Claude settings env."""
+    path = settings_path()
+    write_token(path, token, mcp_url)
+    write_demo_devices(path, tablet_id, phone_id)
+
+
+def scrub_session() -> None:
+    """Remove the token + demo-device IDs from the Claude settings env."""
+    path = settings_path()
+    scrub_token(path)
+    scrub_demo_devices(path)
+
+
 def find_claude_executable() -> str | None:
     """Best-effort discovery of the Claude desktop executable per OS.
 

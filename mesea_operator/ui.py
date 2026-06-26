@@ -24,6 +24,7 @@ from . import (
     device_store,
     install_context,
     instance_guard,
+    logs,
     oauth_client,
     prompts,
     startup,
@@ -54,7 +55,10 @@ class OperatorApp:
 
         ttk.Label(wrap, text=config.APP_NAME, font=("", 18, "bold")).pack(anchor="w")
         self.status = ttk.Label(wrap, text="Se inițializează…", wraplength=420)
-        self.status.pack(anchor="w", pady=(6, 18))
+        self.status.pack(anchor="w", pady=(6, 2))
+        # Dedicated workspace-state line (separate from the account/connection line).
+        self.ws_status = ttk.Label(wrap, text="", foreground="grey", wraplength=420)
+        self.ws_status.pack(anchor="w", pady=(0, 14))
 
         self.launch_btn = ttk.Button(wrap, text="Pornește Mesea Operator", command=self.on_launch)
         self.launch_btn.pack(fill="x", pady=4)
@@ -77,6 +81,9 @@ class OperatorApp:
 
         self.signout_btn = ttk.Button(wrap, text="Deconectare", command=self.on_signout)
         self.signout_btn.pack(fill="x", pady=4)
+
+        # Always available (no token needed) — opens the on-disk developer log.
+        ttk.Button(wrap, text="Loguri dezvoltator", command=logs.open_logs).pack(fill="x", pady=4)
 
         ttk.Label(wrap, text=f"v{__version__}", foreground="grey").pack(side="bottom", anchor="e")
 
@@ -167,11 +174,12 @@ class OperatorApp:
         # NONE: not signed in — _refresh_from_store already set the prompt.
 
     def _sync_workspace(self, token: str) -> None:
-        """Refresh the workspace in the background; surface a failed/stale refresh."""
+        """Refresh the workspace in the background, reporting EVERY outcome on the
+        dedicated workspace-status line (checking / updated / up-to-date / stale)."""
+        self.root.after(0, lambda: self.ws_status.config(text="Se verifică workspace-ul…"))
         ws = workspace.ensure_workspace(token)
         message = startup.workspace_status_message(ws)
-        if message:
-            self.root.after(0, lambda: self.status.config(text=message))
+        self.root.after(0, lambda: self.ws_status.config(text=message))
 
     def _block_invalid_token(self) -> None:
         """Stored token is expired/revoked: block the main flow and prompt re-auth.
@@ -240,7 +248,7 @@ class OperatorApp:
         def work() -> None:
             ws = workspace.ensure_workspace(cred.access_token)
             if ws.status == "error":
-                self._scrub_session_env()
+                claude_bridge.scrub_session()
                 self.root.after(
                     0,
                     lambda: messagebox.showerror(
@@ -255,23 +263,16 @@ class OperatorApp:
                 proc = claude_bridge.launch_claude(exe, str(ws.path), resume=resume)
                 proc.wait()
             finally:
-                self._scrub_session_env()
+                claude_bridge.scrub_session()
                 self._set_status("Claude s-a închis. Token-ul a fost retras din config.")
                 self.root.after(0, self._refresh_from_store)
 
         threading.Thread(target=work, daemon=True).start()
 
     def _stage_session_env(self, token: str) -> None:
-        """Write the token + saved demo-device IDs into the Claude settings env."""
-        path = claude_bridge.settings_path()
-        claude_bridge.write_token(path, token, config.MCP_URL)
+        """Stage the token + chosen demo-device IDs into the Claude settings env."""
         chosen = device_store.load()
-        claude_bridge.write_demo_devices(path, chosen.tablet_id, chosen.phone_id)
-
-    def _scrub_session_env(self) -> None:
-        path = claude_bridge.settings_path()
-        claude_bridge.scrub_token(path)
-        claude_bridge.scrub_demo_devices(path)
+        claude_bridge.stage_session(token, config.MCP_URL, chosen.tablet_id, chosen.phone_id)
 
     def on_devices(self) -> None:
         cred = credential_store.load()
@@ -285,7 +286,7 @@ class OperatorApp:
         if cred:
             threading.Thread(target=lambda: api.revoke(cred.access_token), daemon=True).start()
         credential_store.clear()
-        self._scrub_session_env()
+        claude_bridge.scrub_session()
         self._refresh_from_store()
 
 
