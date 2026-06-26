@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "mesea-operator"
-version = "0.3.6"
+version = "0.3.7"
 description = "Mesea Operator — account-manager launcher (OAuth + Claude Code bridge)"
 requires-python = ">=3.10"
 dependencies = [

@@ -29,6 +29,7 @@ from . import (
     prompts,
     startup,
     updater,
+    windowing,
     workspace,
 )
 
@@ -37,8 +38,6 @@ class OperatorApp:
     def __init__(self, root: tk.Tk) -> None:
         self.root = root
         root.title(f"{config.APP_NAME}")
-        root.geometry("480x340")
-        root.minsize(440, 320)
 
         self._token: str | None = None
         self._label: str | None = None
@@ -94,6 +93,7 @@ class OperatorApp:
         self._refresh_from_store()
         self.root.after(150, lambda: prompts.enforce_single_instance(self._context))
         self.root.after(200, self._startup_tasks)
+        windowing.grow_to_fit(root)  # size to content so no button/label is clipped
 
     # --- state ---------------------------------------------------------------
     def _set_status(self, text: str) -> None:
@@ -112,6 +112,7 @@ class OperatorApp:
             self._token = None
             self.status.config(text="Neconectat. Apasă „Conectează-te”.")
             self._set_connected(False)
+        self.root.after_idle(lambda: windowing.grow_to_fit(self.root))
 
     def _set_connected(self, connected: bool) -> None:
         """Toggle the account-level chrome (sign-out / devices / auth label).
@@ -180,6 +181,7 @@ class OperatorApp:
         ws = workspace.ensure_workspace(token)
         message = startup.workspace_status_message(ws)
         self.root.after(0, lambda: self.ws_status.config(text=message))
+        self.root.after_idle(lambda: windowing.grow_to_fit(self.root))
 
     def _block_invalid_token(self) -> None:
         """Stored token is expired/revoked: block the main flow and prompt re-auth.
