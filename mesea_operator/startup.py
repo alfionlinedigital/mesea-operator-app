@@ -44,18 +44,21 @@ def evaluate_token(token: str | None) -> TokenOutcome:
         return TokenOutcome.UNREACHABLE
 
 
-def workspace_status_message(result: workspace.WorkspaceResult) -> str | None:
-    """Status-line text for a workspace refresh outcome, or ``None`` when it
-    succeeded (``downloaded`` / ``up-to-date`` need no message).
+def workspace_status_message(result: workspace.WorkspaceResult) -> str:
+    """User-facing status-line text for a workspace refresh outcome — EVERY state.
 
-    Surfaces BOTH failure shapes so a frozen workspace is visible: a hard
-    ``error`` (nothing usable on disk) and a ``skipped`` refresh that fell back
-    to the last-good copy — named by its short commit when known, since a silent
-    stale fallback is exactly how an un-updating workspace went unnoticed.
+    Always returns a string so the UI shows the current workspace state (fresh,
+    up to date, frozen on a stale copy, or unavailable), named by its short
+    commit where known, instead of going quiet on success — a silent stale
+    fallback is exactly how an un-updating workspace went unnoticed.
     """
+    commit = f" (commit {result.commit[:7]})" if result.commit else ""
+    if result.status == "downloaded":
+        return f"Workspace actualizat{commit}."
+    if result.status == "up-to-date":
+        return f"Workspace la zi{commit}."
+    if result.status == "skipped":
+        return f"Workspace neactualizat; se folosește ultima versiune{commit}."
     if result.status == "error":
         return f"Atenție workspace: {result.detail}"
-    if result.status == "skipped":
-        version = f" (commit {result.commit[:7]})" if result.commit else ""
-        return f"Workspace neactualizat; se folosește ultima versiune{version}."
-    return None
+    return f"Workspace: {result.status}"

@@ -52,6 +52,12 @@ SELF_UPDATE_REPO = os.environ.get(
     "MESEA_SELF_UPDATE_REPO", "alfionlinedigital/mesea-operator-app"
 )
 
+# Bugsink (Sentry-compatible) error-reporting DSN. Embedded so account managers
+# report errors out-of-the-box; override to redirect, or set empty to disable.
+BUGSINK_DSN = os.environ.get(
+    "BUGSINK_DSN", "https://0ad28fb647db48b493ad96f5ea0adbd3@alfidigital.bugsink.com/2"
+)
+
 # Named mutex the running app holds so the Windows installer can detect a live
 # instance and ask the user to close it. Must stay in sync with the ``AppMutex``
 # directive in ``packaging/windows/installer.iss``.

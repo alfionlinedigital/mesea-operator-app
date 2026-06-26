@@ -1,3 +1,4 @@
 sv-ttk>=2.6
 keyring>=24
 psutil>=5.9
+sentry-sdk>=2

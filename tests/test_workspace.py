@@ -150,14 +150,19 @@ def test_readonly_leftover_does_not_block_refresh(monkeypatch, tmp_path):
     assert not legacy_bak.exists()
 
 
-def test_swap_completes_even_if_old_copy_is_undeletable(monkeypatch, tmp_path):
-    """Robustness by construction: even when the retired copy can't be deleted
-    (truly locked), the new bundle still lands and the etag advances."""
+def test_update_succeeds_even_when_dest_cannot_be_renamed(monkeypatch, tmp_path):
+    """The real-world failure: the workspace dir is a running Claude session's
+    CWD and cannot be renamed on Windows. The in-place update must never depend
+    on renaming ``dest`` — even if every directory rename raises, the bundle's
+    files still land and the etag advances."""
     dest = tmp_path / "ws"
     (dest / ".claude").mkdir(parents=True)
-    (dest / "old.txt").write_text("old")
     workspace._etag_path(dest).write_text('"old-sha"')
-    monkeypatch.setattr(workspace, "_force_rmtree", lambda p: None)
+
+    def no_rename(self, target):  # simulate the locked-dir (CWD) condition
+        raise OSError("The process cannot access the file; it is in use")
+
+    monkeypatch.setattr(workspace.Path, "rename", no_rename)
 
     bundle = _make_bundle({".claude/x": b"y", "README.md": b"new"})
     _patch_urlopen(monkeypatch, lambda req, timeout=0: _FakeResponse(bundle, '"new-sha"'))
@@ -167,7 +172,29 @@ def test_swap_completes_even_if_old_copy_is_undeletable(monkeypatch, tmp_path):
     assert res.status == "downloaded"
     assert workspace._etag_path(dest).read_text() == '"new-sha"'
     assert (dest / "README.md").read_text() == "new"
-    assert not (dest / "old.txt").exists()
+
+
+def test_update_prunes_dropped_files_but_keeps_untracked(monkeypatch, tmp_path):
+    """In-place updates overwrite tracked files, prune files the bundle no longer
+    ships (via the manifest), and NEVER touch user runtime artifacts."""
+    dest = tmp_path / "ws"
+    first = _make_bundle({"README.md": b"v1", ".claude/old-skill.md": b"old"})
+    _patch_urlopen(monkeypatch, lambda req, timeout=0: _FakeResponse(first, '"sha1"'))
+    workspace.ensure_workspace(token="t", dest=dest, url="https://x/api")
+
+    # a user/runtime artifact lands in the workspace after the first sync
+    (dest / ".tmp").mkdir()
+    (dest / ".tmp" / "note.txt").write_text("user data")
+    assert (dest / ".claude" / "old-skill.md").exists()
+
+    second = _make_bundle({"README.md": b"v2"})  # old-skill.md dropped
+    _patch_urlopen(monkeypatch, lambda req, timeout=0: _FakeResponse(second, '"sha2"'))
+    res = workspace.ensure_workspace(token="t", dest=dest, url="https://x/api")
+
+    assert res.status == "downloaded"
+    assert (dest / "README.md").read_text() == "v2"
+    assert not (dest / ".claude" / "old-skill.md").exists()  # tracked + dropped -> pruned
+    assert (dest / ".tmp" / "note.txt").read_text() == "user data"  # untracked -> preserved
 
 
 def test_sweep_removes_legacy_artifacts(tmp_path):

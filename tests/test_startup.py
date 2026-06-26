@@ -49,10 +49,16 @@ def _ws(status: str, detail: str = "", commit: str | None = None) -> workspace.W
     return workspace.WorkspaceResult(Path("ws"), status, detail, commit)
 
 
-def test_workspace_message_none_when_refresh_succeeds():
-    # downloaded / up-to-date are silent — nothing to warn about.
-    assert startup.workspace_status_message(_ws("downloaded", commit="abc")) is None
-    assert startup.workspace_status_message(_ws("up-to-date", commit="abc")) is None
+def test_workspace_message_shows_success_states_with_commit():
+    # Success is no longer silent — the workspace state (and commit) is shown.
+    assert (
+        startup.workspace_status_message(_ws("downloaded", commit="abc1234def"))
+        == "Workspace actualizat (commit abc1234)."
+    )
+    assert (
+        startup.workspace_status_message(_ws("up-to-date", commit="abc1234def"))
+        == "Workspace la zi (commit abc1234)."
+    )
 
 
 def test_workspace_message_surfaces_hard_error():
