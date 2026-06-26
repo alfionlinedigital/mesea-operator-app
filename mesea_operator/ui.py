@@ -1,7 +1,7 @@
 """sv-ttk desktop UI — the only module that imports Tk.
 
 Thin view: every action delegates to the logic modules (oauth_client,
-credential_store, claude_bridge, workspace, updater, api). Long-running work
+credential_store, claude_bridge, workspace, update_checker, api). Long-running work
 (OAuth, git, launch) runs on worker threads and posts status back to the Tk
 main loop via ``root.after`` so the window never freezes.
 """
@@ -28,7 +28,7 @@ from . import (
     oauth_client,
     prompts,
     startup,
-    updater,
+    update_checker,
     windowing,
     workspace,
 )
@@ -42,6 +42,8 @@ class OperatorApp:
         self._token: str | None = None
         self._label: str | None = None
         self._context = install_context.detect_context()
+        # Polls GitHub for a newer release every 60s (prompts once per version).
+        self._updates = update_checker.UpdateChecker(root, self._context, prompts.prompt_update)
 
         # Hold the named mutex so the Windows installer can detect this running
         # instance and ask the user to close it before an upgrade (no-op off
@@ -135,12 +137,12 @@ class OperatorApp:
 
     # --- background startup --------------------------------------------------
     def _startup_tasks(self) -> None:
-        """Validate the stored token and check for updates on one worker thread.
+        """Validate the stored token, then start the periodic update checker.
 
         Ordering is deterministic: the token outcome is applied first (a blocked
-        token takes precedence over an update prompt), then — and only once — an
-        available update is surfaced afterwards, so the two dialogs can never
-        stack in an undefined order. Launch + resume are enabled ONLY on a
+        token takes precedence over an update prompt), then the update checker is
+        started — its first check (and any prompt) lands afterwards, so the two
+        dialogs can never stack. Launch + resume are enabled ONLY on a
         definitively valid token; an unreachable server fails closed quietly.
         """
 
@@ -148,9 +150,7 @@ class OperatorApp:
             cred = credential_store.load()
             outcome = startup.evaluate_token(cred.access_token if cred else None)
             self.root.after(0, lambda: self._apply_token_outcome(outcome, cred))
-            up = updater.check_for_update(context=self._context)
-            if up.available:
-                self.root.after(0, lambda: prompts.prompt_update(up))
+            self.root.after(0, self._updates.start)
 
         threading.Thread(target=work, daemon=True).start()
 

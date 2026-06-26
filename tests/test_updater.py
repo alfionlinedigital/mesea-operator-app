@@ -1,5 +1,7 @@
 """Unit tests for self-update version comparison + asset selection."""
 
+import io
+
 import pytest
 
 from mesea_operator import updater
@@ -52,6 +54,8 @@ def test_check_for_update_detects_newer(monkeypatch):
     }
 
     class FakeResp(io.BytesIO):
+        headers = {}
+
         def __enter__(self):
             return self
 
@@ -75,6 +79,8 @@ def _fake_release(monkeypatch, payload):
     import json
 
     class FakeResp(io.BytesIO):
+        headers = {}
+
         def __enter__(self):
             return self
 
@@ -111,3 +117,50 @@ def test_check_for_update_redirects_by_context(monkeypatch):
     )
     assert portable.download_url == "http://portable"
     assert portable.context == updater.install_context.CONTEXT_PORTABLE
+
+
+class _Resp(io.BytesIO):
+    """Fake urlopen response carrying headers (context-manager)."""
+
+    def __init__(self, data=b"{}", headers=None):
+        super().__init__(data)
+        self.headers = headers or {}
+
+    def __enter__(self):
+        return self
+
+    def __exit__(self, *_a):
+        return False
+
+
+def test_check_for_update_sends_if_none_match_when_etag_given(monkeypatch):
+    captured = {}
+
+    def fake_urlopen(req, timeout=0):
+        captured["inm"] = req.get_header("If-none-match")
+        return _Resp(b'{"tag_name": "v0.1.0"}', {"ETag": '"e2"'})
+
+    monkeypatch.setattr(updater.urllib.request, "urlopen", fake_urlopen)
+    updater.check_for_update(repo="x/y", current="0.1.0", etag='"e1"')
+    assert captured["inm"] == '"e1"'
+
+
+def test_check_for_update_304_reports_not_modified(monkeypatch):
+    def not_modified(*_a, **_k):
+        raise updater.urllib.error.HTTPError("u", 304, "Not Modified", None, None)
+
+    monkeypatch.setattr(updater.urllib.request, "urlopen", not_modified)
+    info = updater.check_for_update(repo="x/y", current="0.1.0", etag='"e1"')
+    assert info.available is False
+    assert info.not_modified is True
+    assert info.etag == '"e1"'  # the cached etag is preserved for the next poll
+
+
+def test_check_for_update_returns_new_etag(monkeypatch):
+    monkeypatch.setattr(
+        updater.urllib.request,
+        "urlopen",
+        lambda *a, **k: _Resp(b'{"tag_name": "v0.1.0"}', {"ETag": '"e9"'}),
+    )
+    info = updater.check_for_update(repo="x/y", current="0.1.0")
+    assert info.etag == '"e9"'
