@@ -18,6 +18,21 @@ from PyInstaller.utils.hooks import collect_data_files, collect_submodules
 # CWD — so anchor everything to the repo root via SPECPATH.
 ROOT = os.path.abspath(os.path.join(SPECPATH, os.pardir))
 
+# Bake the single-source version into the frozen app. A PyInstaller binary ships
+# no dist-info metadata, so mesea_operator.version can't resolve the version via
+# importlib.metadata at runtime — it imports this generated module instead. We
+# write it BEFORE Analysis so it's collected into the bundle, reading the version
+# from the one editable source (pyproject.toml [project].version).
+sys.path.insert(0, ROOT)
+from mesea_operator.version import read_pyproject_version  # noqa: E402
+
+APP_VERSION = read_pyproject_version(ROOT)
+with open(os.path.join(ROOT, "mesea_operator", "_baked_version.py"), "w", encoding="utf-8") as _baked:
+    _baked.write(
+        '"""Generated at PyInstaller build time from pyproject — do not edit or commit."""\n'
+        f'VERSION = "{APP_VERSION}"\n'
+    )
+
 datas = collect_data_files("sv_ttk") + collect_data_files("certifi")
 hiddenimports = (
     collect_submodules("keyring.backends")
@@ -72,5 +87,5 @@ if sys.platform == "darwin":
         name="Mesea Operator.app",
         icon=None,
         bundle_identifier="ro.mesea.operator",
-        info_plist={"CFBundleShortVersionString": "0.3.1", "NSHighResolutionCapable": True},
+        info_plist={"CFBundleShortVersionString": APP_VERSION, "NSHighResolutionCapable": True},
     )
