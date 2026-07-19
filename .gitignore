@@ -5,5 +5,7 @@ build/
 dist/
 *.spec.bak
 .pytest_cache/
+# Written by the PyInstaller spec at build time from pyproject (single-source version).
+mesea_operator/_baked_version.py
 *.egg-info/
 .DS_Store

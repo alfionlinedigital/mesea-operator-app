@@ -8,13 +8,43 @@ on:
 permissions:
   contents: write  # create releases + upload assets
 
-env:
-  APP_VERSION: "0.3.8"
-
 jobs:
+  # Derive the version from the single source (pyproject [project].version) and,
+  # on a tag push, assert the tag matches it — a mismatched `vX.Y.Z` tag fails
+  # the release instead of shipping mislabelled installers. Downstream jobs read
+  # APP_VERSION from this job's output; nothing hardcodes it.
+  version:
+    runs-on: ubuntu-latest
+    outputs:
+      app_version: ${{ steps.derive.outputs.app_version }}
+    steps:
+      - uses: actions/checkout@v4
+      - name: Derive APP_VERSION from pyproject and check tag
+        id: derive
+        shell: bash
+        run: |
+          PYPROJECT_VERSION="$(python3 -c 'import tomllib,pathlib; print(tomllib.loads(pathlib.Path("pyproject.toml").read_text())["project"]["version"])')"
+          if [ -z "$PYPROJECT_VERSION" ]; then
+            echo "::error::could not read [project].version from pyproject.toml"
+            exit 1
+          fi
+          if [[ "$GITHUB_REF" == refs/tags/* ]]; then
+            TAG_VERSION="${GITHUB_REF_NAME#v}"
+            if [ "$TAG_VERSION" != "$PYPROJECT_VERSION" ]; then
+              echo "::error::tag ${GITHUB_REF_NAME} (${TAG_VERSION}) does not match pyproject version ${PYPROJECT_VERSION}. Bump pyproject.toml and re-tag."
+              exit 1
+            fi
+            echo "Tag ${GITHUB_REF_NAME} matches pyproject version ${PYPROJECT_VERSION}."
+          fi
+          echo "app_version=${PYPROJECT_VERSION}" >> "$GITHUB_OUTPUT"
+          echo "Resolved APP_VERSION=${PYPROJECT_VERSION}"
+
   build:
     name: build (${{ matrix.os }})
+    needs: version
     runs-on: ${{ matrix.os }}
+    env:
+      APP_VERSION: ${{ needs.version.outputs.app_version }}
     strategy:
       fail-fast: false
       matrix:
@@ -47,11 +77,16 @@ jobs:
         run: |
           mkdir -p out
           cp "${{ matrix.built }}" "out/${{ matrix.asset }}"
-      - name: Smoke test the binary (headless --version)
+      - name: Smoke test the binary (--version equals the single-source version)
         shell: bash
         run: |
           chmod +x "out/${{ matrix.asset }}" || true
-          "out/${{ matrix.asset }}" --version
+          BUILT_VERSION="$("out/${{ matrix.asset }}" --version)"
+          echo "binary reports '${BUILT_VERSION}', expected '${APP_VERSION}'"
+          if [ "$BUILT_VERSION" != "$APP_VERSION" ]; then
+            echo "::error::frozen --version (${BUILT_VERSION}) != pyproject version (${APP_VERSION}) — the build-time version bake is broken"
+            exit 1
+          fi
 
       # --- per-OS installers --------------------------------------------------
       - name: Package .deb (Debian/Ubuntu)
