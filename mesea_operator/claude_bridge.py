@@ -20,7 +20,7 @@ import subprocess
 import sys
 from pathlib import Path
 
-from . import config
+from . import config, node_runtime
 
 
 def settings_path() -> Path:
@@ -174,4 +174,7 @@ def launch_claude(
     operator-workspace history and nothing else.
     """
     argv = [executable, "--resume"] if resume else [executable]
-    return subprocess.Popen(argv, cwd=workspace_dir)
+    # The workspace's Playwright MCP shells out to `npx`, so the child needs
+    # a Node on PATH. `environ_with_node` prepends the launcher's private
+    # copy only when the AM has none of their own.
+    return subprocess.Popen(argv, cwd=workspace_dir, env=node_runtime.environ_with_node())

@@ -40,4 +40,10 @@ Name: "{group}\Mesea Operator"; Filename: "{app}\mesea-operator.exe"
 Name: "{userdesktop}\Mesea Operator"; Filename: "{app}\mesea-operator.exe"
 
 [Run]
+; The operator workspace drives Playwright through `npx`, so Node has to be
+; there. `--ensure-node` is a no-op when the AM already has one on PATH;
+; otherwise it fetches a per-user copy (no elevation — this installer runs
+; with PrivilegesRequired=lowest). It never fails the install: a missing
+; Node only degrades the website steps of a demo.
+Filename: "{app}\mesea-operator.exe"; Parameters: "--ensure-node"; StatusMsg: "Se pregătește Node.js pentru instrumentele web..."; Flags: runhidden waituntilterminated skipifsilent
 Filename: "{app}\mesea-operator.exe"; Description: "Pornește Mesea Operator"; Flags: nowait postinstall skipifsilent
