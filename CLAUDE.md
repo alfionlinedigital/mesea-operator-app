@@ -23,22 +23,28 @@ Code at the `mesea-operator` workspace.
 **A merged PR does not reach account managers by itself — you must release.** When
 you land a fix or feature here, also bump the version and tag a release:
 
-1. **Bump the version in ALL THREE places** — they must stay in sync (PRs routinely
-   bump `__init__.py` + `APP_VERSION` but forget `pyproject.toml`):
-   - `pyproject.toml` → `version`
-   - `mesea_operator/__init__.py` → `__version__` (what `--version` and the in-app
-     updater read)
-   - `.github/workflows/release.yml` → `env.APP_VERSION` (names the `.deb` / Windows
-     installer)
+1. **Bump the version in the ONE place that owns it — `pyproject.toml`
+   `[project].version`.** Nothing else hardcodes the version:
+   - `mesea_operator/__init__.py` → `__version__` is resolved at runtime by
+     `mesea_operator/version.py` (installed dist metadata → the build-time bake →
+     pyproject, in that order), so `--version` and the in-app updater track
+     pyproject automatically.
+   - `.github/workflows/release.yml` derives `APP_VERSION` (the `.deb` / Windows
+     installer name) from pyproject in its `version` job — no `env` to edit.
+   - The frozen binary reads a `_baked_version.py` that the PyInstaller spec
+     writes from pyproject at build time (gitignored); the macOS bundle's
+     `CFBundleShortVersionString` comes from the same value.
 2. Merge the bump (squash). It can ride along with the feature PR, or be its own
    `chore(release): bump to X.Y.Z` PR.
 3. **Tag the merge commit and push the tag — this is what triggers the release:**
    ```bash
    git tag vX.Y.Z <merge-sha> && git push origin vX.Y.Z
    ```
-   `.github/workflows/release.yml` (`on: push: tags: ["v*"]`) builds the PyInstaller
-   binaries for Windows/macOS/Linux and publishes a GitHub Release with the assets
-   the in-app updater pulls from.
+   `.github/workflows/release.yml` (`on: push: tags: ["v*"]`) first **asserts the
+   tag equals the pyproject version** (a mismatch fails the release, so a forgotten
+   bump can't ship mislabelled installers), then builds the PyInstaller binaries for
+   Windows/macOS/Linux and publishes a GitHub Release with the assets the in-app
+   updater pulls from.
 
 Versioning so far is sequential patch bumps under `0.3.x`. The git tag (`vX.Y.Z`)
-must match the three version fields exactly.
+must match the pyproject version exactly — CI enforces it.

@@ -3,8 +3,11 @@
 ; Wraps the PyInstaller onefile exe (dist\mesea-operator.exe) into a per-user
 ; installer (no admin required) with Start Menu + desktop shortcuts.
 
+; CI always passes the real version via /DMyAppVersion=<ver> (derived from
+; pyproject — the single source). This placeholder only applies to a bare local
+; build with no -D, and is deliberately not a real-looking version.
 #ifndef MyAppVersion
-  #define MyAppVersion "0.3.1"
+  #define MyAppVersion "0.0.0-dev"
 #endif
 #define MyAppName "Mesea Operator"
 

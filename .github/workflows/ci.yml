@@ -20,7 +20,14 @@ jobs:
         run: |
           python -m pip install --upgrade pip
           pip install -r requirements.txt pytest
+          # Editable install so importlib.metadata can resolve the version from
+          # the installed dist-info — the primary path mesea_operator.version uses.
+          pip install -e .
       - name: Run tests
         run: python -m pytest tests/ -q
-      - name: Smoke (headless --version)
-        run: python -m mesea_operator --version
+      - name: Smoke (--version equals the single-source version)
+        run: |
+          REPORTED="$(python -m mesea_operator --version)"
+          EXPECTED="$(python3 -c 'import tomllib,pathlib; print(tomllib.loads(pathlib.Path("pyproject.toml").read_text())["project"]["version"])')"
+          echo "reported '${REPORTED}', expected '${EXPECTED}'"
+          test "$REPORTED" = "$EXPECTED"
