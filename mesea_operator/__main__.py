@@ -15,6 +15,15 @@ def main() -> None:
     if "--version" in sys.argv:
         print(__version__)
         return
+    if "--ensure-node" in sys.argv:
+        # Called by the Windows installer (and usable by hand). Headless,
+        # and never fatal: a missing Node degrades the Playwright MCP
+        # steps, it must not fail the install.
+        from mesea_operator import node_runtime
+
+        result = node_runtime.ensure()
+        print(f"node: {result.status} ({result.detail})")
+        return
     # File logging + error reporting come up before the UI so a startup failure
     # is recorded. Both degrade gracefully and never block launch.
     from mesea_operator import errors, logs

@@ -26,6 +26,7 @@ from . import (
     instance_guard,
     logs,
     oauth_client,
+    session_launcher,
     prompts,
     startup,
     update_checker,
@@ -247,29 +248,22 @@ class OperatorApp:
         self._stage_session_env(cred.access_token)
         self._set_status("Se actualizează workspace-ul…")
 
-        def work() -> None:
-            ws = workspace.ensure_workspace(cred.access_token)
-            if ws.status == "error":
-                claude_bridge.scrub_session()
-                self.root.after(
-                    0,
-                    lambda: messagebox.showerror(
-                        config.APP_NAME, f"Workspace indisponibil: {ws.detail}"
-                    ),
-                )
-                self.root.after(0, self._refresh_from_store)
-                return
+        callbacks = session_launcher.SessionCallbacks(
+            set_status=self._set_status,
+            on_error=lambda detail: self.root.after(
+                0,
+                lambda: messagebox.showerror(
+                    config.APP_NAME, f"Workspace indisponibil: {detail}"
+                ),
+            ),
+            on_finished=lambda: self.root.after(0, self._refresh_from_store),
+        )
 
-            self._set_status("Se pornește Claude…")
-            try:
-                proc = claude_bridge.launch_claude(exe, str(ws.path), resume=resume)
-                proc.wait()
-            finally:
-                claude_bridge.scrub_session()
-                self._set_status("Claude s-a închis. Token-ul a fost retras din config.")
-                self.root.after(0, self._refresh_from_store)
-
-        threading.Thread(target=work, daemon=True).start()
+        threading.Thread(
+            target=session_launcher.run_session,
+            args=(cred.access_token, exe, resume, callbacks),
+            daemon=True,
+        ).start()
 
     def _stage_session_env(self, token: str) -> None:
         """Stage the token + chosen demo-device IDs into the Claude settings env."""

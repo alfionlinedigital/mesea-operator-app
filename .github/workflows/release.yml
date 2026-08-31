@@ -97,7 +97,9 @@ jobs:
           mkdir -p "$PKG/DEBIAN" "$PKG/usr/bin" "$PKG/usr/share/applications"
           cp out/mesea-operator-linux "$PKG/usr/bin/mesea-operator"
           chmod 755 "$PKG/usr/bin/mesea-operator"
-          printf 'Package: mesea-operator\nVersion: %s\nSection: utils\nPriority: optional\nArchitecture: amd64\nMaintainer: Alfi Online Digital <me@octav.info>\nDescription: Mesea Operator launcher for account managers\n OAuth login + Claude Code bridge for the Mesea platform.\n' "$APP_VERSION" > "$PKG/DEBIAN/control"
+          # Depends on nodejs/npm: the operator workspace runs the Playwright MCP
+          # through `npx`, so apt pulls them in when the AM has neither.
+          printf 'Package: mesea-operator\nVersion: %s\nSection: utils\nPriority: optional\nArchitecture: amd64\nDepends: nodejs, npm\nMaintainer: Alfi Online Digital <me@octav.info>\nDescription: Mesea Operator launcher for account managers\n OAuth login + Claude Code bridge for the Mesea platform.\n' "$APP_VERSION" > "$PKG/DEBIAN/control"
           printf '[Desktop Entry]\nName=Mesea Operator\nExec=/usr/bin/mesea-operator\nType=Application\nCategories=Utility;\nTerminal=false\n' > "$PKG/usr/share/applications/mesea-operator.desktop"
           dpkg-deb --build --root-owner-group "$PKG" "out/mesea-operator-linux.deb"
           dpkg-deb --info "out/mesea-operator-linux.deb"
