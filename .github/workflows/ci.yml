@@ -14,8 +14,8 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: "3.11"
-      - name: Install Tk (Linux runners ship Python without tkinter)
-        run: sudo apt-get update && sudo apt-get install -y python3-tk
+      - name: Install Tk + a virtual display (Linux runners ship neither)
+        run: sudo apt-get update && sudo apt-get install -y python3-tk xvfb
       - name: Install deps
         run: |
           python -m pip install --upgrade pip
@@ -23,8 +23,8 @@ jobs:
           # Editable install so importlib.metadata can resolve the version from
           # the installed dist-info — the primary path mesea_operator.version uses.
           pip install -e .
-      - name: Run tests
-        run: python -m pytest tests/ -q
+      - name: Run tests (under Xvfb so the Tk view tests run, not skip)
+        run: xvfb-run -a python -m pytest tests/ -q
       - name: Smoke (--version equals the single-source version)
         run: |
           REPORTED="$(python -m mesea_operator --version)"
