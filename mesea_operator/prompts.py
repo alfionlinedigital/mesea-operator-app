@@ -1,9 +1,10 @@
 """Modal-dialog presenters extracted out of the thin view (``ui.py``).
 
-These own the Romanian copy and the messagebox plumbing for two self-contained
-flows — the portable single-instance guard and the self-update offer — so the
-view stays focused on wiring and state. They import Tk's ``messagebox`` only;
-no widget state, which keeps ``ui.py`` under the file-size cap.
+These own the Romanian copy and the messagebox plumbing for self-contained
+flows — the portable single-instance guard, the invalid-token warning and the
+self-update offer — so the view stays focused on wiring and state. They import
+Tk's ``messagebox`` only; no widget state, which keeps ``ui.py`` under the
+file-size cap.
 """
 
 from __future__ import annotations
@@ -43,6 +44,16 @@ def enforce_single_instance(context: str) -> None:
             "Nu am putut închide toate instanțele "
             f"(PID: {', '.join(map(str, failed))}). Închide-le manual.",
         )
+
+
+def warn_token_invalid() -> None:
+    """The stored token was rejected (expired or revoked): ask for re-auth."""
+    messagebox.showwarning(
+        config.APP_NAME,
+        "Token-ul tău nu mai este valid (expirat sau revocat). "
+        "Reautentifică-te (rulează din nou autentificarea OAuth) "
+        "pentru a continua.",
+    )
 
 
 def prompt_update(up: updater.UpdateInfo) -> None:

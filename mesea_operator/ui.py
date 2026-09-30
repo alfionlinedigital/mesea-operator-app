@@ -11,6 +11,7 @@ from __future__ import annotations
 import threading
 import tkinter as tk
 from tkinter import messagebox, ttk
+from typing import Callable
 
 import sv_ttk
 
@@ -138,20 +139,21 @@ class OperatorApp:
 
     # --- background startup --------------------------------------------------
     def _startup_tasks(self) -> None:
-        """Validate the stored token, then start the periodic update checker.
+        """Validate the stored token, THEN start the update checker — in that
+        order, so a blocked-token dialog and an update prompt never stack."""
+        self._validate_stored_token(then=self._updates.start)
 
-        Ordering is deterministic: the token outcome is applied first (a blocked
-        token takes precedence over an update prompt), then the update checker is
-        started — its first check (and any prompt) lands afterwards, so the two
-        dialogs can never stack. Launch + resume are enabled ONLY on a
-        definitively valid token; an unreachable server fails closed quietly.
-        """
+    def _validate_stored_token(self, then: Callable[[], None] | None = None) -> None:
+        """The ONLY path that unlocks launch + resume: re-lock, probe the stored
+        token on a worker, apply the verdict. Runs at startup and after re-auth."""
+        self._set_launch_enabled(False)
 
         def work() -> None:
             cred = credential_store.load()
             outcome = startup.evaluate_token(cred.access_token if cred else None)
             self.root.after(0, lambda: self._apply_token_outcome(outcome, cred))
-            self.root.after(0, self._updates.start)
+            if then:
+                self.root.after(0, then)
 
         threading.Thread(target=work, daemon=True).start()
 
@@ -197,12 +199,7 @@ class OperatorApp:
             "Apasă „Reautentificare” pentru a te conecta din nou."
         )
         self.auth_btn.config(text="Reautentificare")
-        messagebox.showwarning(
-            config.APP_NAME,
-            "Token-ul tău nu mai este valid (expirat sau revocat). "
-            "Reautentifică-te (rulează din nou autentificarea OAuth) "
-            "pentru a continua.",
-        )
+        prompts.warn_token_invalid()
 
     # --- actions -------------------------------------------------------------
     def on_authorize(self) -> None:
@@ -210,17 +207,25 @@ class OperatorApp:
         self._set_status("Se deschide browserul pentru autentificare…")
 
         def work() -> None:
+            authorized = False
             try:
                 result = oauth_client.run_authorization_flow()
                 label = api.fetch_identity(result.access_token)
                 credential_store.store(result.access_token, result.expires_at, label)
+                authorized = True
             except oauth_client.OAuthError as exc:
                 self.root.after(0, lambda: messagebox.showerror(config.APP_NAME, str(exc)))
             finally:
-                self.root.after(0, self.auth_btn.state, ["!disabled"])
-                self.root.after(0, self._refresh_from_store)
+                self.root.after(0, lambda: self._finish_authorize(authorized))
 
         threading.Thread(target=work, daemon=True).start()
+
+    def _finish_authorize(self, authorized: bool) -> None:
+        """Main-thread: show the new account, then re-validate so launch unlocks."""
+        self.auth_btn.state(["!disabled"])
+        self._refresh_from_store()
+        if authorized:
+            self._validate_stored_token()
 
     def on_launch(self) -> None:
         self._launch(resume=False)
